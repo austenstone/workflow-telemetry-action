@@ -41047,7 +41047,10 @@ function startWorkerServer(options) {
         const samples = [];
         const errors = [];
         let staticData = {};
-        let staticDataPromise = Promise.resolve();
+        let resolveStaticData = () => undefined;
+        const staticDataPromise = new Promise(resolve => {
+            resolveStaticData = resolve;
+        });
         function collectStaticData() {
             return __awaiter(this, void 0, void 0, function* () {
                 const collected = yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors);
@@ -41124,11 +41127,16 @@ function startWorkerServer(options) {
                 resolve();
             });
         });
-        staticDataPromise = collectStaticData();
-        void collectSample();
+        const staticTimer = setTimeout(() => {
+            void (() => __awaiter(this, void 0, void 0, function* () {
+                yield collectStaticData();
+                resolveStaticData();
+            }))();
+        }, Math.min(options.frequencyMs, 1000));
         const timer = setInterval(() => {
             void collectSample();
         }, options.frequencyMs);
+        staticTimer.unref();
         timer.unref();
     });
 }
