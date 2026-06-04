@@ -40928,6 +40928,7 @@ const http = __importStar(__nccwpck_require__(3685));
 const systeminformation_1 = __importDefault(__nccwpck_require__(9284));
 const HOST = 'localhost';
 const BYTES_PER_MB = 1024 * 1024;
+const IS_WINDOWS = process.platform === 'win32';
 function round(value) {
     return Math.round(value * 100) / 100;
 }
@@ -41019,7 +41020,9 @@ function startWorkerServer(options) {
                             active: 0,
                             available: 0
                         }),
-                        getMetricOrDefault(() => systeminformation_1.default.networkStats(), []),
+                        IS_WINDOWS
+                            ? Promise.resolve([])
+                            : getMetricOrDefault(() => systeminformation_1.default.networkStats(), []),
                         getMetricOrDefault(() => systeminformation_1.default.fsStats(), {
                             rx_sec: 0,
                             wx_sec: 0

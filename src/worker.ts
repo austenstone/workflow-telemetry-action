@@ -9,6 +9,7 @@ import {
 
 const HOST = 'localhost'
 const BYTES_PER_MB = 1024 * 1024
+const IS_WINDOWS = process.platform === 'win32'
 
 function round(value: number): number {
   return Math.round(value * 100) / 100
@@ -129,10 +130,12 @@ export async function startWorkerServer(
           active: 0,
           available: 0
         } as Awaited<ReturnType<typeof si.mem>>),
-        getMetricOrDefault(
-          () => si.networkStats(),
-          [] as Awaited<ReturnType<typeof si.networkStats>>
-        ),
+        IS_WINDOWS
+          ? Promise.resolve([] as Awaited<ReturnType<typeof si.networkStats>>)
+          : getMetricOrDefault(
+              () => si.networkStats(),
+              [] as Awaited<ReturnType<typeof si.networkStats>>
+            ),
         getMetricOrDefault(() => si.fsStats(), {
           rx_sec: 0,
           wx_sec: 0
