@@ -14,6 +14,10 @@ function round(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+function safeNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
 function sum(values: readonly number[]): number {
   return round(values.reduce((total, value) => total + value, 0))
 }
@@ -114,30 +118,38 @@ export async function startWorkerServer(
       let rxBytesPerSecond = 0
       let txBytesPerSecond = 0
 
-      for (const adapter of network) {
-        rxBytesPerSecond += adapter.rx_sec ?? 0
-        txBytesPerSecond += adapter.tx_sec ?? 0
+      for (const adapter of network ?? []) {
+        if (!adapter) {
+          continue
+        }
+
+        rxBytesPerSecond += safeNumber(adapter.rx_sec)
+        txBytesPerSecond += safeNumber(adapter.tx_sec)
       }
 
       let totalDiskBytes = 0
       let usedDiskBytes = 0
 
-      for (const filesystem of diskSize) {
-        totalDiskBytes += filesystem.size
-        usedDiskBytes += filesystem.used
+      for (const filesystem of diskSize ?? []) {
+        if (!filesystem) {
+          continue
+        }
+
+        totalDiskBytes += safeNumber(filesystem.size)
+        usedDiskBytes += safeNumber(filesystem.used)
       }
 
       samples.cpu.push({
         time,
-        total_load: round(cpu.currentLoad),
-        user_load: round(cpu.currentLoadUser),
-        system_load: round(cpu.currentLoadSystem)
+        total_load: round(safeNumber(cpu.currentLoad)),
+        user_load: round(safeNumber(cpu.currentLoadUser)),
+        system_load: round(safeNumber(cpu.currentLoadSystem))
       })
       samples.memory.push({
         time,
-        total_mb: round(memory.total / BYTES_PER_MB),
-        active_mb: round(memory.active / BYTES_PER_MB),
-        available_mb: round(memory.available / BYTES_PER_MB)
+        total_mb: round(safeNumber(memory.total) / BYTES_PER_MB),
+        active_mb: round(safeNumber(memory.active) / BYTES_PER_MB),
+        available_mb: round(safeNumber(memory.available) / BYTES_PER_MB)
       })
       samples.network.push({
         time,
@@ -147,10 +159,10 @@ export async function startWorkerServer(
       samples.disk.push({
         time,
         read_mb: round(
-          ((disk.rx_sec ?? 0) * (intervalMs / 1000)) / BYTES_PER_MB
+          (safeNumber(disk.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
         ),
         write_mb: round(
-          ((disk.wx_sec ?? 0) * (intervalMs / 1000)) / BYTES_PER_MB
+          (safeNumber(disk.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
         )
       })
       samples.disk_size.push({

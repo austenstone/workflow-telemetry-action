@@ -24,7 +24,7 @@ outputs:
   sample_count:
     description: "Number of telemetry samples exported"
 runs:
-  using: "node20"
+  using: "node24"
   main: dist/index.js
 branding:
   icon: "activity"

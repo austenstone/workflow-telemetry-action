@@ -40931,6 +40931,9 @@ const BYTES_PER_MB = 1024 * 1024;
 function round(value) {
     return Math.round(value * 100) / 100;
 }
+function safeNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
 function sum(values) {
     return round(values.reduce((total, value) => total + value, 0));
 }
@@ -40992,7 +40995,6 @@ function startWorkerServer(options) {
                     return;
                 }
                 collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
-                    var _a, _b, _c, _d;
                     const time = Date.now();
                     const intervalMs = lastSampleTime === 0 ? 0 : time - lastSampleTime;
                     lastSampleTime = time;
@@ -41005,27 +41007,33 @@ function startWorkerServer(options) {
                     ]);
                     let rxBytesPerSecond = 0;
                     let txBytesPerSecond = 0;
-                    for (const adapter of network) {
-                        rxBytesPerSecond += (_a = adapter.rx_sec) !== null && _a !== void 0 ? _a : 0;
-                        txBytesPerSecond += (_b = adapter.tx_sec) !== null && _b !== void 0 ? _b : 0;
+                    for (const adapter of network !== null && network !== void 0 ? network : []) {
+                        if (!adapter) {
+                            continue;
+                        }
+                        rxBytesPerSecond += safeNumber(adapter.rx_sec);
+                        txBytesPerSecond += safeNumber(adapter.tx_sec);
                     }
                     let totalDiskBytes = 0;
                     let usedDiskBytes = 0;
-                    for (const filesystem of diskSize) {
-                        totalDiskBytes += filesystem.size;
-                        usedDiskBytes += filesystem.used;
+                    for (const filesystem of diskSize !== null && diskSize !== void 0 ? diskSize : []) {
+                        if (!filesystem) {
+                            continue;
+                        }
+                        totalDiskBytes += safeNumber(filesystem.size);
+                        usedDiskBytes += safeNumber(filesystem.used);
                     }
                     samples.cpu.push({
                         time,
-                        total_load: round(cpu.currentLoad),
-                        user_load: round(cpu.currentLoadUser),
-                        system_load: round(cpu.currentLoadSystem)
+                        total_load: round(safeNumber(cpu.currentLoad)),
+                        user_load: round(safeNumber(cpu.currentLoadUser)),
+                        system_load: round(safeNumber(cpu.currentLoadSystem))
                     });
                     samples.memory.push({
                         time,
-                        total_mb: round(memory.total / BYTES_PER_MB),
-                        active_mb: round(memory.active / BYTES_PER_MB),
-                        available_mb: round(memory.available / BYTES_PER_MB)
+                        total_mb: round(safeNumber(memory.total) / BYTES_PER_MB),
+                        active_mb: round(safeNumber(memory.active) / BYTES_PER_MB),
+                        available_mb: round(safeNumber(memory.available) / BYTES_PER_MB)
                     });
                     samples.network.push({
                         time,
@@ -41034,8 +41042,8 @@ function startWorkerServer(options) {
                     });
                     samples.disk.push({
                         time,
-                        read_mb: round((((_c = disk.rx_sec) !== null && _c !== void 0 ? _c : 0) * (intervalMs / 1000)) / BYTES_PER_MB),
-                        write_mb: round((((_d = disk.wx_sec) !== null && _d !== void 0 ? _d : 0) * (intervalMs / 1000)) / BYTES_PER_MB)
+                        read_mb: round((safeNumber(disk.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB),
+                        write_mb: round((safeNumber(disk.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB)
                     });
                     samples.disk_size.push({
                         time,
