@@ -176,41 +176,16 @@ export async function startWorkerServer(
   const startedAt = new Date().toISOString()
   const samples: TelemetrySample[] = []
   const errors: TelemetryError[] = []
-  const staticData =
-    (await collectJsonMetric(
+  let staticData: JsonValue = {}
+  const staticDataPromise = (async () => {
+    const collected = await collectJsonMetric(
       'getStaticData',
       async () => await si.getStaticData(),
       errors
-    )) ?? {}
-  let collectionInFlight: Promise<void> | undefined
+    )
 
-  async function collectSample(): Promise<void> {
-    if (collectionInFlight) {
-      await collectionInFlight
-      return
-    }
-
-    collectionInFlight = (async () => {
-      const time = Date.now()
-
-      const dynamic = await collectJsonMetric(
-        'getDynamicData',
-        async () => await si.getDynamicData('', '*'),
-        errors
-      )
-
-      samples.push({
-        time,
-        dynamic: dynamic ?? {}
-      })
-    })()
-
-    try {
-      await collectionInFlight
-    } finally {
-      collectionInFlight = undefined
-    }
-  }
+    staticData = collected ?? {}
+  })()
 
   const server = http.createServer((request, response) => {
     const route = new URL(request.url || '/', `http://${HOST}`).pathname
@@ -231,6 +206,7 @@ export async function startWorkerServer(
         }
 
         if (route === '/metrics' && request.method === 'GET') {
+          await staticDataPromise
           sendJson(
             response,
             200,
@@ -268,6 +244,36 @@ export async function startWorkerServer(
       }
     })()
   })
+
+  let collectionInFlight: Promise<void> | undefined
+
+  async function collectSample(): Promise<void> {
+    if (collectionInFlight) {
+      await collectionInFlight
+      return
+    }
+
+    collectionInFlight = (async () => {
+      const time = Date.now()
+
+      const dynamic = await collectJsonMetric(
+        'getDynamicData',
+        async () => await si.getDynamicData('', '*'),
+        errors
+      )
+
+      samples.push({
+        time,
+        dynamic: dynamic ?? {}
+      })
+    })()
+
+    try {
+      await collectionInFlight
+    } finally {
+      collectionInFlight = undefined
+    }
+  }
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)

@@ -41042,35 +41042,15 @@ function sendEmpty(response, statusCode) {
     response.end();
 }
 function startWorkerServer(options) {
-    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const startedAt = new Date().toISOString();
         const samples = [];
         const errors = [];
-        const staticData = (_a = (yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors))) !== null && _a !== void 0 ? _a : {};
-        let collectionInFlight;
-        function collectSample() {
-            return __awaiter(this, void 0, void 0, function* () {
-                if (collectionInFlight) {
-                    yield collectionInFlight;
-                    return;
-                }
-                collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
-                    const time = Date.now();
-                    const dynamic = yield collectJsonMetric('getDynamicData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getDynamicData('', '*'); }), errors);
-                    samples.push({
-                        time,
-                        dynamic: dynamic !== null && dynamic !== void 0 ? dynamic : {}
-                    });
-                }))();
-                try {
-                    yield collectionInFlight;
-                }
-                finally {
-                    collectionInFlight = undefined;
-                }
-            });
-        }
+        let staticData = {};
+        const staticDataPromise = (() => __awaiter(this, void 0, void 0, function* () {
+            const collected = yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors);
+            staticData = collected !== null && collected !== void 0 ? collected : {};
+        }))();
         const server = http.createServer((request, response) => {
             const route = new URL(request.url || '/', `http://${HOST}`).pathname;
             void (() => __awaiter(this, void 0, void 0, function* () {
@@ -41087,6 +41067,7 @@ function startWorkerServer(options) {
                         return;
                     }
                     if (route === '/metrics' && request.method === 'GET') {
+                        yield staticDataPromise;
                         sendJson(response, 200, createTelemetryExport(startedAt, options.frequencyMs, staticData, samples, errors));
                         return;
                     }
@@ -41110,6 +41091,29 @@ function startWorkerServer(options) {
                 }
             }))();
         });
+        let collectionInFlight;
+        function collectSample() {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (collectionInFlight) {
+                    yield collectionInFlight;
+                    return;
+                }
+                collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
+                    const time = Date.now();
+                    const dynamic = yield collectJsonMetric('getDynamicData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getDynamicData('', '*'); }), errors);
+                    samples.push({
+                        time,
+                        dynamic: dynamic !== null && dynamic !== void 0 ? dynamic : {}
+                    });
+                }))();
+                try {
+                    yield collectionInFlight;
+                }
+                finally {
+                    collectionInFlight = undefined;
+                }
+            });
+        }
         yield new Promise((resolve, reject) => {
             server.once('error', reject);
             server.listen(options.port, HOST, () => {
