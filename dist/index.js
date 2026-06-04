@@ -40931,6 +40931,38 @@ const BYTES_PER_MB = 1024 * 1024;
 function round(value) {
     return Math.round(value * 100) / 100;
 }
+function getNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+function getObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+}
+function getArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+function toJsonValue(value) {
+    const json = JSON.stringify(value);
+    if (json === undefined) {
+        return null;
+    }
+    return JSON.parse(json);
+}
+function collectJsonMetric(metric, collect, errors) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            return toJsonValue(yield collect());
+        }
+        catch (error) {
+            errors.push({ time: Date.now(), metric, message: errorMessage(error) });
+            return null;
+        }
+    });
+}
 function sum(values) {
     return round(values.reduce((total, value) => total + value, 0));
 }
@@ -40940,35 +40972,65 @@ function max(values) {
 function avg(values) {
     return values.length > 0 ? round(sum(values) / values.length) : 0;
 }
-function createEmptySamples() {
-    return {
-        cpu: [],
-        memory: [],
-        network: [],
-        disk: [],
-        disk_size: []
-    };
+function sampleIntervalSeconds(samples, index) {
+    if (index === 0) {
+        return 0;
+    }
+    return Math.max(samples[index].time - samples[index - 1].time, 0) / 1000;
 }
 function calculateSummary(samples) {
+    const cpuLoads = [];
+    const memoryActiveMb = [];
+    const networkRxMb = [];
+    const networkTxMb = [];
+    const diskReadMb = [];
+    const diskWriteMb = [];
+    for (const [index, sample] of samples.entries()) {
+        const dynamic = getObject(sample.dynamic);
+        const currentLoad = getObject(dynamic.currentLoad);
+        const mem = getObject(dynamic.mem);
+        const networkStats = getArray(dynamic.networkStats);
+        const fsStats = getObject(dynamic.fsStats);
+        const intervalSeconds = sampleIntervalSeconds(samples, index);
+        cpuLoads.push(getNumber(currentLoad.currentLoad));
+        memoryActiveMb.push(getNumber(mem.active) / BYTES_PER_MB);
+        let rxBytesPerSecond = 0;
+        let txBytesPerSecond = 0;
+        for (const adapter of networkStats) {
+            const adapterStats = getObject(adapter);
+            rxBytesPerSecond += getNumber(adapterStats.rx_sec);
+            txBytesPerSecond += getNumber(adapterStats.tx_sec);
+        }
+        networkRxMb.push((rxBytesPerSecond * intervalSeconds) / BYTES_PER_MB);
+        networkTxMb.push((txBytesPerSecond * intervalSeconds) / BYTES_PER_MB);
+        diskReadMb.push((getNumber(fsStats.rx_sec) * intervalSeconds) / BYTES_PER_MB);
+        diskWriteMb.push((getNumber(fsStats.wx_sec) * intervalSeconds) / BYTES_PER_MB);
+    }
     return {
-        sample_count: Math.max(samples.cpu.length, samples.memory.length, samples.network.length, samples.disk.length, samples.disk_size.length),
-        cpu_total_load_avg: avg(samples.cpu.map(sample => sample.total_load)),
-        cpu_total_load_max: max(samples.cpu.map(sample => sample.total_load)),
-        memory_active_mb_max: max(samples.memory.map(sample => sample.active_mb)),
-        network_rx_mb_total: sum(samples.network.map(sample => sample.rx_mb)),
-        network_tx_mb_total: sum(samples.network.map(sample => sample.tx_mb)),
-        disk_read_mb_total: sum(samples.disk.map(sample => sample.read_mb)),
-        disk_write_mb_total: sum(samples.disk.map(sample => sample.write_mb))
+        sample_count: samples.length,
+        cpu_load_avg: avg(cpuLoads),
+        cpu_load_max: max(cpuLoads),
+        memory_active_mb_max: max(memoryActiveMb),
+        network_rx_mb_total: sum(networkRxMb),
+        network_tx_mb_total: sum(networkTxMb),
+        disk_read_mb_total: sum(diskReadMb),
+        disk_write_mb_total: sum(diskWriteMb)
     };
 }
-function createTelemetryExport(startedAt, frequencyMs, samples) {
+function createTelemetryExport(startedAt, frequencyMs, staticData, samples, errors) {
     return {
-        schema_version: '1',
+        schema_version: '2',
+        source: {
+            name: 'systeminformation',
+            version: systeminformation_1.default.version()
+        },
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         frequency_ms: frequencyMs,
+        static: staticData,
         samples,
-        summary: calculateSummary(samples)
+        summary: calculateSummary(samples),
+        errors
     };
 }
 function sendJson(response, statusCode, body) {
@@ -40980,10 +41042,12 @@ function sendEmpty(response, statusCode) {
     response.end();
 }
 function startWorkerServer(options) {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const startedAt = new Date().toISOString();
-        const samples = createEmptySamples();
-        let lastSampleTime = 0;
+        const samples = [];
+        const errors = [];
+        const staticData = (_a = (yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors))) !== null && _a !== void 0 ? _a : {};
         let collectionInFlight;
         function collectSample() {
             return __awaiter(this, void 0, void 0, function* () {
@@ -40992,55 +41056,11 @@ function startWorkerServer(options) {
                     return;
                 }
                 collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
-                    var _a, _b, _c, _d;
                     const time = Date.now();
-                    const intervalMs = lastSampleTime === 0 ? 0 : time - lastSampleTime;
-                    lastSampleTime = time;
-                    const [cpu, memory, network, disk, diskSize] = yield Promise.all([
-                        systeminformation_1.default.currentLoad(),
-                        systeminformation_1.default.mem(),
-                        systeminformation_1.default.networkStats(),
-                        systeminformation_1.default.fsStats(),
-                        systeminformation_1.default.fsSize()
-                    ]);
-                    let rxBytesPerSecond = 0;
-                    let txBytesPerSecond = 0;
-                    for (const adapter of network) {
-                        rxBytesPerSecond += (_a = adapter.rx_sec) !== null && _a !== void 0 ? _a : 0;
-                        txBytesPerSecond += (_b = adapter.tx_sec) !== null && _b !== void 0 ? _b : 0;
-                    }
-                    let totalDiskBytes = 0;
-                    let usedDiskBytes = 0;
-                    for (const filesystem of diskSize) {
-                        totalDiskBytes += filesystem.size;
-                        usedDiskBytes += filesystem.used;
-                    }
-                    samples.cpu.push({
+                    const dynamic = yield collectJsonMetric('getDynamicData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getDynamicData('', '*'); }), errors);
+                    samples.push({
                         time,
-                        total_load: round(cpu.currentLoad),
-                        user_load: round(cpu.currentLoadUser),
-                        system_load: round(cpu.currentLoadSystem)
-                    });
-                    samples.memory.push({
-                        time,
-                        total_mb: round(memory.total / BYTES_PER_MB),
-                        active_mb: round(memory.active / BYTES_PER_MB),
-                        available_mb: round(memory.available / BYTES_PER_MB)
-                    });
-                    samples.network.push({
-                        time,
-                        rx_mb: round((rxBytesPerSecond * (intervalMs / 1000)) / BYTES_PER_MB),
-                        tx_mb: round((txBytesPerSecond * (intervalMs / 1000)) / BYTES_PER_MB)
-                    });
-                    samples.disk.push({
-                        time,
-                        read_mb: round((((_c = disk.rx_sec) !== null && _c !== void 0 ? _c : 0) * (intervalMs / 1000)) / BYTES_PER_MB),
-                        write_mb: round((((_d = disk.wx_sec) !== null && _d !== void 0 ? _d : 0) * (intervalMs / 1000)) / BYTES_PER_MB)
-                    });
-                    samples.disk_size.push({
-                        time,
-                        available_mb: round((totalDiskBytes - usedDiskBytes) / BYTES_PER_MB),
-                        used_mb: round(usedDiskBytes / BYTES_PER_MB)
+                        dynamic: dynamic !== null && dynamic !== void 0 ? dynamic : {}
                     });
                 }))();
                 try {
@@ -41062,12 +41082,12 @@ function startWorkerServer(options) {
                     if (route === '/collect' && request.method === 'POST') {
                         yield collectSample();
                         sendJson(response, 200, {
-                            sample_count: calculateSummary(samples).sample_count
+                            sample_count: samples.length
                         });
                         return;
                     }
                     if (route === '/metrics' && request.method === 'GET') {
-                        sendJson(response, 200, createTelemetryExport(startedAt, options.frequencyMs, samples));
+                        sendJson(response, 200, createTelemetryExport(startedAt, options.frequencyMs, staticData, samples, errors));
                         return;
                     }
                     if (route === '/shutdown' && request.method === 'POST') {

@@ -1,6 +1,6 @@
 # workflow-telemetry-action
 
-Minimal GitHub Action for collecting CPU, memory, network, and disk telemetry from a workflow job as raw JSON.
+Minimal GitHub Action for collecting raw `systeminformation` telemetry from a workflow job as JSON.
 
 No PR comments. No Markdown charts. No job summary rendering. The exported `telemetry.json` is the product.
 
@@ -53,58 +53,43 @@ jobs:
 
 ```json
 {
-  "schema_version": "1",
+  "schema_version": "2",
+  "source": {
+    "name": "systeminformation",
+    "version": "5.21.24"
+  },
   "started_at": "2026-06-04T12:00:00.000Z",
   "finished_at": "2026-06-04T12:01:00.000Z",
   "frequency_ms": 1000,
-  "samples": {
-    "cpu": [
-      {
-        "time": 1780000000000,
-        "total_load": 12.3,
-        "user_load": 8.1,
-        "system_load": 4.2
-      }
-    ],
-    "memory": [
-      {
-        "time": 1780000000000,
-        "total_mb": 12345,
-        "active_mb": 6789,
-        "available_mb": 5555
-      }
-    ],
-    "network": [
-      {
-        "time": 1780000000000,
-        "rx_mb": 1,
-        "tx_mb": 2
-      }
-    ],
-    "disk": [
-      {
-        "time": 1780000000000,
-        "read_mb": 10,
-        "write_mb": 20
-      }
-    ],
-    "disk_size": [
-      {
-        "time": 1780000000000,
-        "available_mb": 100000,
-        "used_mb": 50000
-      }
-    ]
+  "static": {
+    "...": "raw si.getStaticData() payload"
   },
+  "samples": [
+    {
+      "time": 1780000000000,
+      "dynamic": {
+        "...": "raw si.getDynamicData('', '*') payload"
+      }
+    }
+  ],
   "summary": {
     "sample_count": 10,
-    "cpu_total_load_avg": 12.3,
-    "cpu_total_load_max": 50.1,
+    "cpu_load_avg": 12.3,
+    "cpu_load_max": 50.1,
     "memory_active_mb_max": 7000,
     "network_rx_mb_total": 20,
     "network_tx_mb_total": 5,
     "disk_read_mb_total": 100,
     "disk_write_mb_total": 200
-  }
+  },
+  "errors": [
+    {
+      "time": 1780000000000,
+      "metric": "getDynamicData",
+      "message": "metric collection failed"
+    }
+  ]
 }
 ```
+
+`static` is collected once with `si.getStaticData()`. Each sample stores the raw `si.getDynamicData('', '*')` payload. `summary` is derived convenience data, and metric collection failures are recorded in `errors` instead of failing `/collect`.
