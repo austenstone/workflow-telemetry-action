@@ -99,6 +99,10 @@ async function parseMetrics(response: HttpResponse): Promise<TelemetryExport> {
   return JSON.parse(response.body) as TelemetryExport
 }
 
+function routeWithTime(route: string): string {
+  return `${route}?time=${Date.now()}`
+}
+
 export async function startCollector(options: CollectorOptions): Promise<void> {
   logger.info(
     `Starting telemetry collector on ${HOST}:${options.port} every ${options.frequencyMs}ms`
@@ -118,6 +122,26 @@ export async function startCollector(options: CollectorOptions): Promise<void> {
 
   await waitForHealth(options.port)
 
+  const prepareResponse = await request('POST', options.port, '/prepare')
+
+  if (prepareResponse.statusCode !== 200) {
+    throw new Error(
+      `/prepare returned ${prepareResponse.statusCode}: ${prepareResponse.body}`
+    )
+  }
+
+  const startResponse = await request(
+    'POST',
+    options.port,
+    routeWithTime('/start')
+  )
+
+  if (startResponse.statusCode !== 200) {
+    throw new Error(
+      `/start returned ${startResponse.statusCode}: ${startResponse.body}`
+    )
+  }
+
   logger.info(
     `Telemetry collector is healthy with pid ${child.pid ?? 'unknown'}`
   )
@@ -126,11 +150,15 @@ export async function startCollector(options: CollectorOptions): Promise<void> {
 export async function exportCollector(options: ExportOptions): Promise<void> {
   logger.info(`Exporting telemetry from ${HOST}:${options.port}`)
 
-  const collectResponse = await request('POST', options.port, '/collect')
+  const stopResponse = await request(
+    'POST',
+    options.port,
+    routeWithTime('/stop')
+  )
 
-  if (collectResponse.statusCode !== 200) {
+  if (stopResponse.statusCode !== 200) {
     throw new Error(
-      `/collect returned ${collectResponse.statusCode}: ${collectResponse.body}`
+      `/stop returned ${stopResponse.statusCode}: ${stopResponse.body}`
     )
   }
 

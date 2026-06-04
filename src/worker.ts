@@ -134,26 +134,43 @@ function calculateSummary(
 }
 
 function createTelemetryExport(
-  startedAt: string,
+  startedAtMs: number,
+  finishedAtMs: number,
   frequencyMs: number,
   staticData: JsonValue,
   samples: TelemetrySample[],
   errors: TelemetryError[]
 ): TelemetryExport {
+  const windowSamples = samples.filter(
+    sample => sample.time >= startedAtMs && sample.time <= finishedAtMs
+  )
+
   return {
     schema_version: '2',
     source: {
       name: 'systeminformation',
       version: si.version()
     },
-    started_at: startedAt,
-    finished_at: new Date().toISOString(),
+    started_at: new Date(startedAtMs).toISOString(),
+    finished_at: new Date(finishedAtMs).toISOString(),
     frequency_ms: frequencyMs,
     static: staticData,
-    samples,
-    summary: calculateSummary(samples),
+    samples: windowSamples,
+    summary: calculateSummary(windowSamples),
     errors
   }
+}
+
+function getTimeParameter(url: URL): number | undefined {
+  const rawTime = url.searchParams.get('time')
+
+  if (!rawTime) {
+    return undefined
+  }
+
+  const time = Number(rawTime)
+
+  return Number.isFinite(time) && time > 0 ? time : undefined
 }
 
 function sendJson(
@@ -173,14 +190,14 @@ function sendEmpty(response: http.ServerResponse, statusCode: number): void {
 export async function startWorkerServer(
   options: CollectorOptions
 ): Promise<void> {
-  const startedAt = new Date().toISOString()
+  const serverStartedAtMs = Date.now()
   const samples: TelemetrySample[] = []
   const errors: TelemetryError[] = []
+  let collectionStartedAtMs = serverStartedAtMs
+  let collectionFinishedAtMs: number | undefined
+  let samplingTimer: ReturnType<typeof setInterval> | undefined
   let staticData: JsonValue = {}
-  let resolveStaticData: () => void = () => undefined
-  const staticDataPromise = new Promise<void>(resolve => {
-    resolveStaticData = resolve
-  })
+  let staticDataPromise: Promise<void> | undefined
 
   async function collectStaticData(): Promise<void> {
     const collected = await collectJsonMetric(
@@ -192,13 +209,68 @@ export async function startWorkerServer(
     staticData = collected ?? {}
   }
 
+  async function ensureStaticData(): Promise<void> {
+    if (!staticDataPromise) {
+      staticDataPromise = collectStaticData()
+    }
+
+    await staticDataPromise
+  }
+
+  function startSampling(startedAtMs: number): void {
+    collectionStartedAtMs = startedAtMs
+    collectionFinishedAtMs = undefined
+
+    if (samplingTimer) {
+      return
+    }
+
+    samplingTimer = setInterval(() => {
+      void collectSample()
+    }, options.frequencyMs)
+
+    samplingTimer.unref()
+  }
+
+  function stopSampling(finishedAtMs: number): void {
+    collectionFinishedAtMs = finishedAtMs
+
+    if (!samplingTimer) {
+      return
+    }
+
+    clearInterval(samplingTimer)
+    samplingTimer = undefined
+  }
+
   const server = http.createServer((request, response) => {
-    const route = new URL(request.url || '/', `http://${HOST}`).pathname
+    const url = new URL(request.url || '/', `http://${HOST}`)
+    const route = url.pathname
 
     void (async () => {
       try {
         if (route === '/health' && request.method === 'GET') {
           sendJson(response, 200, { ok: true })
+          return
+        }
+
+        if (route === '/prepare' && request.method === 'POST') {
+          await ensureStaticData()
+          sendJson(response, 200, { ok: true })
+          return
+        }
+
+        if (route === '/start' && request.method === 'POST') {
+          startSampling(getTimeParameter(url) ?? Date.now())
+          sendJson(response, 200, { ok: true })
+          return
+        }
+
+        if (route === '/stop' && request.method === 'POST') {
+          stopSampling(getTimeParameter(url) ?? Date.now())
+          sendJson(response, 200, {
+            sample_count: samples.length
+          })
           return
         }
 
@@ -211,12 +283,17 @@ export async function startWorkerServer(
         }
 
         if (route === '/metrics' && request.method === 'GET') {
-          await staticDataPromise
+          if (!collectionFinishedAtMs) {
+            stopSampling(Date.now())
+          }
+
+          await ensureStaticData()
           sendJson(
             response,
             200,
             createTelemetryExport(
-              startedAt,
+              collectionStartedAtMs,
+              collectionFinishedAtMs ?? Date.now(),
               options.frequencyMs,
               staticData,
               samples,
@@ -227,6 +304,7 @@ export async function startWorkerServer(
         }
 
         if (route === '/shutdown' && request.method === 'POST') {
+          stopSampling(Date.now())
           sendJson(response, 200, { ok: true })
           server.close(() => process.exit(0))
           return
@@ -234,6 +312,9 @@ export async function startWorkerServer(
 
         if (
           route === '/health' ||
+          route === '/prepare' ||
+          route === '/start' ||
+          route === '/stop' ||
           route === '/collect' ||
           route === '/metrics' ||
           route === '/shutdown'
@@ -287,21 +368,4 @@ export async function startWorkerServer(
       resolve()
     })
   })
-
-  const staticTimer = setTimeout(
-    () => {
-      void (async () => {
-        await collectStaticData()
-        resolveStaticData()
-      })()
-    },
-    Math.min(options.frequencyMs, 1000)
-  )
-
-  const timer = setInterval(() => {
-    void collectSample()
-  }, options.frequencyMs)
-
-  staticTimer.unref()
-  timer.unref()
 }

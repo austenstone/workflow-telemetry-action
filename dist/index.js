@@ -40688,6 +40688,9 @@ function parseMetrics(response) {
         return JSON.parse(response.body);
     });
 }
+function routeWithTime(route) {
+    return `${route}?time=${Date.now()}`;
+}
 function startCollector(options) {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
@@ -40699,6 +40702,14 @@ function startCollector(options) {
         });
         child.unref();
         yield waitForHealth(options.port);
+        const prepareResponse = yield request('POST', options.port, '/prepare');
+        if (prepareResponse.statusCode !== 200) {
+            throw new Error(`/prepare returned ${prepareResponse.statusCode}: ${prepareResponse.body}`);
+        }
+        const startResponse = yield request('POST', options.port, routeWithTime('/start'));
+        if (startResponse.statusCode !== 200) {
+            throw new Error(`/start returned ${startResponse.statusCode}: ${startResponse.body}`);
+        }
         logger.info(`Telemetry collector is healthy with pid ${(_a = child.pid) !== null && _a !== void 0 ? _a : 'unknown'}`);
     });
 }
@@ -40706,9 +40717,9 @@ exports.startCollector = startCollector;
 function exportCollector(options) {
     return __awaiter(this, void 0, void 0, function* () {
         logger.info(`Exporting telemetry from ${HOST}:${options.port}`);
-        const collectResponse = yield request('POST', options.port, '/collect');
-        if (collectResponse.statusCode !== 200) {
-            throw new Error(`/collect returned ${collectResponse.statusCode}: ${collectResponse.body}`);
+        const stopResponse = yield request('POST', options.port, routeWithTime('/stop'));
+        if (stopResponse.statusCode !== 200) {
+            throw new Error(`/stop returned ${stopResponse.statusCode}: ${stopResponse.body}`);
         }
         const metrics = yield parseMetrics(yield request('GET', options.port, '/metrics'));
         const outputPath = path.resolve(options.outputPath);
@@ -41019,21 +41030,30 @@ function calculateSummary(samples) {
         disk_write_mb_total: sum(diskWriteMb)
     };
 }
-function createTelemetryExport(startedAt, frequencyMs, staticData, samples, errors) {
+function createTelemetryExport(startedAtMs, finishedAtMs, frequencyMs, staticData, samples, errors) {
+    const windowSamples = samples.filter(sample => sample.time >= startedAtMs && sample.time <= finishedAtMs);
     return {
         schema_version: '2',
         source: {
             name: 'systeminformation',
             version: systeminformation_1.default.version()
         },
-        started_at: startedAt,
-        finished_at: new Date().toISOString(),
+        started_at: new Date(startedAtMs).toISOString(),
+        finished_at: new Date(finishedAtMs).toISOString(),
         frequency_ms: frequencyMs,
         static: staticData,
-        samples,
-        summary: calculateSummary(samples),
+        samples: windowSamples,
+        summary: calculateSummary(windowSamples),
         errors
     };
+}
+function getTimeParameter(url) {
+    const rawTime = url.searchParams.get('time');
+    if (!rawTime) {
+        return undefined;
+    }
+    const time = Number(rawTime);
+    return Number.isFinite(time) && time > 0 ? time : undefined;
 }
 function sendJson(response, statusCode, body) {
     response.writeHead(statusCode, { 'content-type': 'application/json' });
@@ -41045,26 +41065,72 @@ function sendEmpty(response, statusCode) {
 }
 function startWorkerServer(options) {
     return __awaiter(this, void 0, void 0, function* () {
-        const startedAt = new Date().toISOString();
+        const serverStartedAtMs = Date.now();
         const samples = [];
         const errors = [];
+        let collectionStartedAtMs = serverStartedAtMs;
+        let collectionFinishedAtMs;
+        let samplingTimer;
         let staticData = {};
-        let resolveStaticData = () => undefined;
-        const staticDataPromise = new Promise(resolve => {
-            resolveStaticData = resolve;
-        });
+        let staticDataPromise;
         function collectStaticData() {
             return __awaiter(this, void 0, void 0, function* () {
                 const collected = yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors);
                 staticData = collected !== null && collected !== void 0 ? collected : {};
             });
         }
+        function ensureStaticData() {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (!staticDataPromise) {
+                    staticDataPromise = collectStaticData();
+                }
+                yield staticDataPromise;
+            });
+        }
+        function startSampling(startedAtMs) {
+            collectionStartedAtMs = startedAtMs;
+            collectionFinishedAtMs = undefined;
+            if (samplingTimer) {
+                return;
+            }
+            samplingTimer = setInterval(() => {
+                void collectSample();
+            }, options.frequencyMs);
+            samplingTimer.unref();
+        }
+        function stopSampling(finishedAtMs) {
+            collectionFinishedAtMs = finishedAtMs;
+            if (!samplingTimer) {
+                return;
+            }
+            clearInterval(samplingTimer);
+            samplingTimer = undefined;
+        }
         const server = http.createServer((request, response) => {
-            const route = new URL(request.url || '/', `http://${HOST}`).pathname;
+            const url = new URL(request.url || '/', `http://${HOST}`);
+            const route = url.pathname;
             void (() => __awaiter(this, void 0, void 0, function* () {
+                var _a, _b;
                 try {
                     if (route === '/health' && request.method === 'GET') {
                         sendJson(response, 200, { ok: true });
+                        return;
+                    }
+                    if (route === '/prepare' && request.method === 'POST') {
+                        yield ensureStaticData();
+                        sendJson(response, 200, { ok: true });
+                        return;
+                    }
+                    if (route === '/start' && request.method === 'POST') {
+                        startSampling((_a = getTimeParameter(url)) !== null && _a !== void 0 ? _a : Date.now());
+                        sendJson(response, 200, { ok: true });
+                        return;
+                    }
+                    if (route === '/stop' && request.method === 'POST') {
+                        stopSampling((_b = getTimeParameter(url)) !== null && _b !== void 0 ? _b : Date.now());
+                        sendJson(response, 200, {
+                            sample_count: samples.length
+                        });
                         return;
                     }
                     if (route === '/collect' && request.method === 'POST') {
@@ -41075,16 +41141,23 @@ function startWorkerServer(options) {
                         return;
                     }
                     if (route === '/metrics' && request.method === 'GET') {
-                        yield staticDataPromise;
-                        sendJson(response, 200, createTelemetryExport(startedAt, options.frequencyMs, staticData, samples, errors));
+                        if (!collectionFinishedAtMs) {
+                            stopSampling(Date.now());
+                        }
+                        yield ensureStaticData();
+                        sendJson(response, 200, createTelemetryExport(collectionStartedAtMs, collectionFinishedAtMs !== null && collectionFinishedAtMs !== void 0 ? collectionFinishedAtMs : Date.now(), options.frequencyMs, staticData, samples, errors));
                         return;
                     }
                     if (route === '/shutdown' && request.method === 'POST') {
+                        stopSampling(Date.now());
                         sendJson(response, 200, { ok: true });
                         server.close(() => process.exit(0));
                         return;
                     }
                     if (route === '/health' ||
+                        route === '/prepare' ||
+                        route === '/start' ||
+                        route === '/stop' ||
                         route === '/collect' ||
                         route === '/metrics' ||
                         route === '/shutdown') {
@@ -41129,17 +41202,6 @@ function startWorkerServer(options) {
                 resolve();
             });
         });
-        const staticTimer = setTimeout(() => {
-            void (() => __awaiter(this, void 0, void 0, function* () {
-                yield collectStaticData();
-                resolveStaticData();
-            }))();
-        }, Math.min(options.frequencyMs, 1000));
-        const timer = setInterval(() => {
-            void collectSample();
-        }, options.frequencyMs);
-        staticTimer.unref();
-        timer.unref();
     });
 }
 exports.startWorkerServer = startWorkerServer;
