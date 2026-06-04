@@ -1,77 +1,110 @@
 # workflow-telemetry-action
 
-A GitHub Action to track and monitor the 
-- workflow runs, jobs and steps
-- resource metrics 
-- and process activities 
-of your GitHub Action workflow runs. 
-If the run is triggered via a Pull Request, it will create a comment on the connected PR with the results 
-and/or publishes the results to the job summary. 
+Minimal GitHub Action for collecting CPU, memory, network, and disk telemetry from a workflow job as raw JSON.
 
-The action traces the jobs' step executions and shows them in trace chart,
-
-And collects the following metrics:
-- CPU Load (user and system) in percentage
-- Memory usage (used and free) in MB
-- Network I/O (read and write) in MB
-- Disk I/O (read and write) in MB
-
-And traces the process executions (only supported on `Ubuntu`) 
-
-as trace chart with the following information:
-- Name
-- Start time
-- Duration (in ms)
-- Finish time
-- Exit status as success or fail (highlighted as red)
-
-and as trace table with the following information:
-- Name
-- Id
-- Parent id
-- User id
-- Start time
-- Duration (in ms)
-- Exit code
-- File name
-- Arguments
-
-### Example Output
-
-An example output of a simple workflow run will look like this.
-
-![Step Trace Example](/images/step-trace-example.png)
-
-![Metrics Example](/images/metrics-example.png)
-
-![Process Trace Example](/images/proc-trace-example.png)
+No PR comments. No Markdown charts. No job summary rendering. The exported `telemetry.json` is the product.
 
 ## Usage
 
-To use the action, add the following step before the steps you want to track.
-
 ```yaml
-permissions:
-  pull-requests: write
 jobs:
-  workflow-telemetry-action:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
+      - uses: actions/checkout@v4
+
+      - name: Start telemetry
+        uses: austenstone/workflow-telemetry-action@<sha>
+        with:
+          mode: start
+          metric_frequency: "1"
+
+      - run: npm test
+
+      - name: Export telemetry
+        uses: austenstone/workflow-telemetry-action@<sha>
+        with:
+          mode: export
+          output_path: telemetry.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telemetry
+          path: telemetry.json
 ```
 
-## Configuration
+## Inputs
 
-| Option                       | Requirement       | Description
-|------------------------------| ---               | ---
-| `github_token`               | Optional          | An alternative GitHub token, other than the default provided by GitHub Actions runner.
-| `metric_frequency`           | Optional          | Metric collection frequency in seconds. Must be a number. Defaults to `5`.
-| `proc_trace_min_duration`    | Optional          | Puts minimum limit for process execution duration to be traced. Must be a number. Defaults to `-1` which means process duration filtering is not applied.
-| `proc_trace_sys_enable`      | Optional          | Enables tracing default system processes (`aws`, `cat`, `sed`, ...). Defaults to `false`.
-| `proc_trace_chart_show`      | Optional          | Enables showing traced processes in trace chart. Defaults to `true`.
-| `proc_trace_chart_max_count` | Optional          | Maximum number of processes to be shown in trace chart (applicable if `proc_trace_chart_show` input is `true`). Must be a number. Defaults to `100`.
-| `proc_trace_table_show`      | Optional          | Enables showing traced processes in trace table. Defaults to `true`.
-| `comment_on_pr`              | Optional          | Set to `true` to publish the results as comment to the PR (applicable if workflow run is triggered by PR). Defaults to `true`. <br/> Requires `pull-requests: write` permission
-| `job_summary`                | Optional          | Set to `true` to publish the results as part of the [job summary page](https://github.blog/2022-05-09-supercharging-github-actions-with-job-summaries/) of the workflow run. Defaults to `true`.
-| `theme`                      | Optional          | Set to `dark` to generate charts compatible with Github **dark** mode. Defaults to `light`.
+| Input | Default | Description |
+| --- | --- | --- |
+| `mode` | `start` | `start` launches the local collector. `export` writes telemetry JSON. |
+| `output_path` | `telemetry.json` | Path to write telemetry JSON when `mode=export`. |
+| `metric_frequency` | `1` | Metric collection frequency in seconds. |
+| `server_port` | `7777` | Local collector HTTP server port. |
+
+## Outputs
+
+| Output | Description |
+| --- | --- |
+| `telemetry_path` | Absolute path to the exported telemetry JSON. |
+| `sample_count` | Number of exported telemetry samples. |
+
+## JSON shape
+
+```json
+{
+  "schema_version": "1",
+  "started_at": "2026-06-04T12:00:00.000Z",
+  "finished_at": "2026-06-04T12:01:00.000Z",
+  "frequency_ms": 1000,
+  "samples": {
+    "cpu": [
+      {
+        "time": 1780000000000,
+        "total_load": 12.3,
+        "user_load": 8.1,
+        "system_load": 4.2
+      }
+    ],
+    "memory": [
+      {
+        "time": 1780000000000,
+        "total_mb": 12345,
+        "active_mb": 6789,
+        "available_mb": 5555
+      }
+    ],
+    "network": [
+      {
+        "time": 1780000000000,
+        "rx_mb": 1,
+        "tx_mb": 2
+      }
+    ],
+    "disk": [
+      {
+        "time": 1780000000000,
+        "read_mb": 10,
+        "write_mb": 20
+      }
+    ],
+    "disk_size": [
+      {
+        "time": 1780000000000,
+        "available_mb": 100000,
+        "used_mb": 50000
+      }
+    ]
+  },
+  "summary": {
+    "sample_count": 10,
+    "cpu_total_load_avg": 12.3,
+    "cpu_total_load_max": 50.1,
+    "memory_active_mb_max": 7000,
+    "network_rx_mb_total": 20,
+    "network_tx_mb_total": 5,
+    "disk_read_mb_total": 100,
+    "disk_write_mb_total": 200
+  }
+}
+```
