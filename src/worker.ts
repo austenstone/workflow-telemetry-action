@@ -177,7 +177,9 @@ export async function startWorkerServer(
   const samples: TelemetrySample[] = []
   const errors: TelemetryError[] = []
   let staticData: JsonValue = {}
-  const staticDataPromise = (async () => {
+  let staticDataPromise = Promise.resolve()
+
+  async function collectStaticData(): Promise<void> {
     const collected = await collectJsonMetric(
       'getStaticData',
       async () => await si.getStaticData(),
@@ -185,7 +187,7 @@ export async function startWorkerServer(
     )
 
     staticData = collected ?? {}
-  })()
+  }
 
   const server = http.createServer((request, response) => {
     const route = new URL(request.url || '/', `http://${HOST}`).pathname
@@ -283,7 +285,8 @@ export async function startWorkerServer(
     })
   })
 
-  await collectSample()
+  staticDataPromise = collectStaticData()
+  void collectSample()
 
   const timer = setInterval(() => {
     void collectSample()
