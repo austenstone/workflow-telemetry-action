@@ -18,6 +18,17 @@ function safeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+async function getMetricOrDefault<T>(
+  collect: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  try {
+    return await collect()
+  } catch {
+    return fallback
+  }
+}
+
 function sum(values: readonly number[]): number {
   return round(values.reduce((total, value) => total + value, 0))
 }
@@ -108,11 +119,28 @@ export async function startWorkerServer(
       lastSampleTime = time
 
       const [cpu, memory, network, disk, diskSize] = await Promise.all([
-        si.currentLoad(),
-        si.mem(),
-        si.networkStats(),
-        si.fsStats(),
-        si.fsSize()
+        getMetricOrDefault(() => si.currentLoad(), {
+          currentLoad: 0,
+          currentLoadUser: 0,
+          currentLoadSystem: 0
+        } as Awaited<ReturnType<typeof si.currentLoad>>),
+        getMetricOrDefault(() => si.mem(), {
+          total: 0,
+          active: 0,
+          available: 0
+        } as Awaited<ReturnType<typeof si.mem>>),
+        getMetricOrDefault(
+          () => si.networkStats(),
+          [] as Awaited<ReturnType<typeof si.networkStats>>
+        ),
+        getMetricOrDefault(() => si.fsStats(), {
+          rx_sec: 0,
+          wx_sec: 0
+        } as Awaited<ReturnType<typeof si.fsStats>>),
+        getMetricOrDefault(
+          () => si.fsSize(),
+          [] as Awaited<ReturnType<typeof si.fsSize>>
+        )
       ])
 
       let rxBytesPerSecond = 0

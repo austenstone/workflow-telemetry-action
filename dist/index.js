@@ -40934,6 +40934,16 @@ function round(value) {
 function safeNumber(value) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
+function getMetricOrDefault(collect, fallback) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            return yield collect();
+        }
+        catch (_a) {
+            return fallback;
+        }
+    });
+}
 function sum(values) {
     return round(values.reduce((total, value) => total + value, 0));
 }
@@ -40999,11 +41009,22 @@ function startWorkerServer(options) {
                     const intervalMs = lastSampleTime === 0 ? 0 : time - lastSampleTime;
                     lastSampleTime = time;
                     const [cpu, memory, network, disk, diskSize] = yield Promise.all([
-                        systeminformation_1.default.currentLoad(),
-                        systeminformation_1.default.mem(),
-                        systeminformation_1.default.networkStats(),
-                        systeminformation_1.default.fsStats(),
-                        systeminformation_1.default.fsSize()
+                        getMetricOrDefault(() => systeminformation_1.default.currentLoad(), {
+                            currentLoad: 0,
+                            currentLoadUser: 0,
+                            currentLoadSystem: 0
+                        }),
+                        getMetricOrDefault(() => systeminformation_1.default.mem(), {
+                            total: 0,
+                            active: 0,
+                            available: 0
+                        }),
+                        getMetricOrDefault(() => systeminformation_1.default.networkStats(), []),
+                        getMetricOrDefault(() => systeminformation_1.default.fsStats(), {
+                            rx_sec: 0,
+                            wx_sec: 0
+                        }),
+                        getMetricOrDefault(() => systeminformation_1.default.fsSize(), [])
                     ]);
                     let rxBytesPerSecond = 0;
                     let txBytesPerSecond = 0;
