@@ -41049,15 +41049,15 @@ function startWorkerServer(options) {
                     }
                     samples.cpu.push({
                         time,
-                        total_load: round(safeNumber(cpu.currentLoad)),
-                        user_load: round(safeNumber(cpu.currentLoadUser)),
-                        system_load: round(safeNumber(cpu.currentLoadSystem))
+                        total_load: round(safeNumber(cpu === null || cpu === void 0 ? void 0 : cpu.currentLoad)),
+                        user_load: round(safeNumber(cpu === null || cpu === void 0 ? void 0 : cpu.currentLoadUser)),
+                        system_load: round(safeNumber(cpu === null || cpu === void 0 ? void 0 : cpu.currentLoadSystem))
                     });
                     samples.memory.push({
                         time,
-                        total_mb: round(safeNumber(memory.total) / BYTES_PER_MB),
-                        active_mb: round(safeNumber(memory.active) / BYTES_PER_MB),
-                        available_mb: round(safeNumber(memory.available) / BYTES_PER_MB)
+                        total_mb: round(safeNumber(memory === null || memory === void 0 ? void 0 : memory.total) / BYTES_PER_MB),
+                        active_mb: round(safeNumber(memory === null || memory === void 0 ? void 0 : memory.active) / BYTES_PER_MB),
+                        available_mb: round(safeNumber(memory === null || memory === void 0 ? void 0 : memory.available) / BYTES_PER_MB)
                     });
                     samples.network.push({
                         time,
@@ -41066,8 +41066,8 @@ function startWorkerServer(options) {
                     });
                     samples.disk.push({
                         time,
-                        read_mb: round((safeNumber(disk.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB),
-                        write_mb: round((safeNumber(disk.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB)
+                        read_mb: round((safeNumber(disk === null || disk === void 0 ? void 0 : disk.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB),
+                        write_mb: round((safeNumber(disk === null || disk === void 0 ? void 0 : disk.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB)
                     });
                     samples.disk_size.push({
                         time,

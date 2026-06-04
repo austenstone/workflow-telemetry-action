@@ -172,15 +172,15 @@ export async function startWorkerServer(
 
       samples.cpu.push({
         time,
-        total_load: round(safeNumber(cpu.currentLoad)),
-        user_load: round(safeNumber(cpu.currentLoadUser)),
-        system_load: round(safeNumber(cpu.currentLoadSystem))
+        total_load: round(safeNumber(cpu?.currentLoad)),
+        user_load: round(safeNumber(cpu?.currentLoadUser)),
+        system_load: round(safeNumber(cpu?.currentLoadSystem))
       })
       samples.memory.push({
         time,
-        total_mb: round(safeNumber(memory.total) / BYTES_PER_MB),
-        active_mb: round(safeNumber(memory.active) / BYTES_PER_MB),
-        available_mb: round(safeNumber(memory.available) / BYTES_PER_MB)
+        total_mb: round(safeNumber(memory?.total) / BYTES_PER_MB),
+        active_mb: round(safeNumber(memory?.active) / BYTES_PER_MB),
+        available_mb: round(safeNumber(memory?.available) / BYTES_PER_MB)
       })
       samples.network.push({
         time,
@@ -190,10 +190,10 @@ export async function startWorkerServer(
       samples.disk.push({
         time,
         read_mb: round(
-          (safeNumber(disk.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
+          (safeNumber(disk?.rx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
         ),
         write_mb: round(
-          (safeNumber(disk.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
+          (safeNumber(disk?.wx_sec) * (intervalMs / 1000)) / BYTES_PER_MB
         )
       })
       samples.disk_size.push({
