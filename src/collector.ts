@@ -10,6 +10,8 @@ const HOST = 'localhost'
 const WORKER_ARG = '--worker'
 const HEALTH_TIMEOUT_MS = 10_000
 const HEALTH_POLL_MS = 250
+const HEALTH_REQUEST_TIMEOUT_MS = 1000
+const REQUEST_TIMEOUT_MS = 60_000
 
 interface HttpResponse {
   readonly statusCode: number
@@ -19,7 +21,8 @@ interface HttpResponse {
 async function request(
   method: 'GET' | 'POST',
   port: number,
-  route: string
+  route: string,
+  timeoutMs = REQUEST_TIMEOUT_MS
 ): Promise<HttpResponse> {
   return await new Promise((resolve, reject) => {
     const req = http.request(
@@ -28,7 +31,7 @@ async function request(
         port,
         path: route,
         method,
-        timeout: 5000
+        timeout: timeoutMs
       },
       res => {
         const chunks: Buffer[] = []
@@ -64,7 +67,12 @@ async function waitForHealth(port: number): Promise<void> {
 
   while (Date.now() < deadline) {
     try {
-      const response = await request('GET', port, '/health')
+      const response = await request(
+        'GET',
+        port,
+        '/health',
+        HEALTH_REQUEST_TIMEOUT_MS
+      )
 
       if (response.statusCode === 200) {
         return

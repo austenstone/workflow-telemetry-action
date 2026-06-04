@@ -40624,7 +40624,9 @@ const HOST = 'localhost';
 const WORKER_ARG = '--worker';
 const HEALTH_TIMEOUT_MS = 10000;
 const HEALTH_POLL_MS = 250;
-function request(method, port, route) {
+const HEALTH_REQUEST_TIMEOUT_MS = 1000;
+const REQUEST_TIMEOUT_MS = 60000;
+function request(method, port, route, timeoutMs = REQUEST_TIMEOUT_MS) {
     return __awaiter(this, void 0, void 0, function* () {
         return yield new Promise((resolve, reject) => {
             const req = http.request({
@@ -40632,7 +40634,7 @@ function request(method, port, route) {
                 port,
                 path: route,
                 method,
-                timeout: 5000
+                timeout: timeoutMs
             }, res => {
                 const chunks = [];
                 res.on('data', chunk => {
@@ -40664,7 +40666,7 @@ function waitForHealth(port) {
         let lastError = 'collector did not respond';
         while (Date.now() < deadline) {
             try {
-                const response = yield request('GET', port, '/health');
+                const response = yield request('GET', port, '/health', HEALTH_REQUEST_TIMEOUT_MS);
                 if (response.statusCode === 200) {
                     return;
                 }
