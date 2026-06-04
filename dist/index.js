@@ -41102,6 +41102,24 @@ function startWorkerServer(options) {
             clearInterval(samplingTimer);
             samplingTimer = undefined;
         }
+        function hasWindowSamples() {
+            const finishedAtMs = collectionFinishedAtMs !== null && collectionFinishedAtMs !== void 0 ? collectionFinishedAtMs : Date.now();
+            return samples.some(sample => sample.time >= collectionStartedAtMs && sample.time <= finishedAtMs);
+        }
+        function ensureWindowSample() {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (hasWindowSamples()) {
+                    return;
+                }
+                if (collectionInFlight) {
+                    yield collectionInFlight;
+                    if (hasWindowSamples()) {
+                        return;
+                    }
+                }
+                yield collectSample(collectionFinishedAtMs !== null && collectionFinishedAtMs !== void 0 ? collectionFinishedAtMs : Date.now());
+            });
+        }
         const server = http.createServer((request, response) => {
             const url = new URL(request.url || '/', `http://${HOST}`);
             const route = url.pathname;
@@ -41140,6 +41158,7 @@ function startWorkerServer(options) {
                         if (!collectionFinishedAtMs) {
                             stopSampling(Date.now());
                         }
+                        yield ensureWindowSample();
                         yield ensureStaticData();
                         sendJson(response, 200, createTelemetryExport(collectionStartedAtMs, collectionFinishedAtMs !== null && collectionFinishedAtMs !== void 0 ? collectionFinishedAtMs : Date.now(), options.frequencyMs, staticData, samples, errors));
                         return;
@@ -41169,14 +41188,13 @@ function startWorkerServer(options) {
             }))();
         });
         let collectionInFlight;
-        function collectSample() {
+        function collectSample(time = Date.now()) {
             return __awaiter(this, void 0, void 0, function* () {
                 if (collectionInFlight) {
                     yield collectionInFlight;
                     return;
                 }
                 collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
-                    const time = Date.now();
                     const dynamic = yield collectJsonMetric('getDynamicData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getDynamicData('', '*'); }), errors);
                     samples.push({
                         time,

@@ -243,6 +243,31 @@ export async function startWorkerServer(
     samplingTimer = undefined
   }
 
+  function hasWindowSamples(): boolean {
+    const finishedAtMs = collectionFinishedAtMs ?? Date.now()
+
+    return samples.some(
+      sample =>
+        sample.time >= collectionStartedAtMs && sample.time <= finishedAtMs
+    )
+  }
+
+  async function ensureWindowSample(): Promise<void> {
+    if (hasWindowSamples()) {
+      return
+    }
+
+    if (collectionInFlight) {
+      await collectionInFlight
+
+      if (hasWindowSamples()) {
+        return
+      }
+    }
+
+    await collectSample(collectionFinishedAtMs ?? Date.now())
+  }
+
   const server = http.createServer((request, response) => {
     const url = new URL(request.url || '/', `http://${HOST}`)
     const route = url.pathname
@@ -287,6 +312,7 @@ export async function startWorkerServer(
             stopSampling(Date.now())
           }
 
+          await ensureWindowSample()
           await ensureStaticData()
           sendJson(
             response,
@@ -333,15 +359,13 @@ export async function startWorkerServer(
 
   let collectionInFlight: Promise<void> | undefined
 
-  async function collectSample(): Promise<void> {
+  async function collectSample(time = Date.now()): Promise<void> {
     if (collectionInFlight) {
       await collectionInFlight
       return
     }
 
     collectionInFlight = (async () => {
-      const time = Date.now()
-
       const dynamic = await collectJsonMetric(
         'getDynamicData',
         async () => await si.getDynamicData('', '*'),
