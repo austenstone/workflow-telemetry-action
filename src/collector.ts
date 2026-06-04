@@ -122,14 +122,6 @@ export async function startCollector(options: CollectorOptions): Promise<void> {
 
   await waitForHealth(options.port)
 
-  const prepareResponse = await request('POST', options.port, '/prepare')
-
-  if (prepareResponse.statusCode !== 200) {
-    throw new Error(
-      `/prepare returned ${prepareResponse.statusCode}: ${prepareResponse.body}`
-    )
-  }
-
   const startResponse = await request(
     'POST',
     options.port,

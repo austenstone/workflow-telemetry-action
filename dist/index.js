@@ -40702,10 +40702,6 @@ function startCollector(options) {
         });
         child.unref();
         yield waitForHealth(options.port);
-        const prepareResponse = yield request('POST', options.port, '/prepare');
-        if (prepareResponse.statusCode !== 200) {
-            throw new Error(`/prepare returned ${prepareResponse.statusCode}: ${prepareResponse.body}`);
-        }
         const startResponse = yield request('POST', options.port, routeWithTime('/start'));
         if (startResponse.statusCode !== 200) {
             throw new Error(`/start returned ${startResponse.statusCode}: ${startResponse.body}`);

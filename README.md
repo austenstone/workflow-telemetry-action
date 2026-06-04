@@ -92,6 +92,6 @@ jobs:
 }
 ```
 
-`static` is collected once with `si.getStaticData()` before the timed sample window starts. Each sample stores the raw `si.getDynamicData('', '*')` payload. `summary` is derived convenience data, and metric collection failures are recorded in `errors` instead of failing `/collect`.
+`static` is collected once with `si.getStaticData()` outside the timed sample window. Each sample stores the raw `si.getDynamicData('', '*')` payload. `summary` is derived convenience data, and metric collection failures are recorded in `errors` instead of failing `/collect`.
 
 The measured sample window starts after the `mode=start` action has prepared the collector and stops immediately when the `mode=export` action begins. Export writes the samples already collected in between; it does not force an extra export-time dynamic sample.
