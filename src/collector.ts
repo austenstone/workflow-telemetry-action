@@ -11,7 +11,7 @@ const WORKER_ARG = '--worker'
 const HEALTH_TIMEOUT_MS = 10_000
 const HEALTH_POLL_MS = 250
 const HEALTH_REQUEST_TIMEOUT_MS = 1000
-const REQUEST_TIMEOUT_MS = 60_000
+const REQUEST_TIMEOUT_MS = 180_000
 
 interface HttpResponse {
   readonly statusCode: number

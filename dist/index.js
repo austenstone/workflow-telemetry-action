@@ -31383,7 +31383,7 @@ const WORKER_ARG = '--worker';
 const HEALTH_TIMEOUT_MS = 10000;
 const HEALTH_POLL_MS = 250;
 const HEALTH_REQUEST_TIMEOUT_MS = 1000;
-const REQUEST_TIMEOUT_MS = 60000;
+const REQUEST_TIMEOUT_MS = 180000;
 function request(method_1, port_1, route_1) {
     return __awaiter(this, arguments, void 0, function* (method, port, route, timeoutMs = REQUEST_TIMEOUT_MS) {
         return yield new Promise((resolve, reject) => {
