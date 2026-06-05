@@ -4,11 +4,11 @@
   "private": false,
   "description": "GitHub Action to collect workflow CPU, memory, network, and disk telemetry as JSON",
   "main": "lib/index.js",
-  "types": "lib/types.d.ts",
+  "types": "src/types.ts",
   "exports": {
     "./types": {
-      "types": "./lib/types.d.ts",
-      "default": "./lib/types.js"
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
     }
   },
   "scripts": {
