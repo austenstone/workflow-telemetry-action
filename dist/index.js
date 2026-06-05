@@ -59137,14 +59137,6 @@ function round(value) {
 function getNumber(value) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
-function getObject(value) {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value
-        : {};
-}
-function getArray(value) {
-    return Array.isArray(value) ? value : [];
-}
 function errorMessage(error) {
     return error instanceof Error ? error.message : String(error);
 }
@@ -59182,6 +59174,7 @@ function sampleIntervalSeconds(samples, index) {
     return Math.max(samples[index].time - samples[index - 1].time, 0) / 1000;
 }
 function calculateSummary(samples) {
+    var _a, _b, _c, _d, _e;
     const cpuLoads = [];
     const memoryActiveMb = [];
     const networkRxMb = [];
@@ -59189,25 +59182,20 @@ function calculateSummary(samples) {
     const diskReadMb = [];
     const diskWriteMb = [];
     for (const [index, sample] of samples.entries()) {
-        const dynamic = getObject(sample.dynamic);
-        const currentLoad = getObject(dynamic.currentLoad);
-        const mem = getObject(dynamic.mem);
-        const networkStats = getArray(dynamic.networkStats);
-        const fsStats = getObject(dynamic.fsStats);
+        const metrics = sample.dynamic;
         const intervalSeconds = sampleIntervalSeconds(samples, index);
-        cpuLoads.push(getNumber(currentLoad.currentLoad));
-        memoryActiveMb.push(getNumber(mem.active) / BYTES_PER_MB);
+        cpuLoads.push(getNumber((_a = metrics.currentLoad) === null || _a === void 0 ? void 0 : _a.currentLoad));
+        memoryActiveMb.push(getNumber((_b = metrics.mem) === null || _b === void 0 ? void 0 : _b.active) / BYTES_PER_MB);
         let rxBytesPerSecond = 0;
         let txBytesPerSecond = 0;
-        for (const adapter of networkStats) {
-            const adapterStats = getObject(adapter);
-            rxBytesPerSecond += getNumber(adapterStats.rx_sec);
-            txBytesPerSecond += getNumber(adapterStats.tx_sec);
+        for (const adapter of (_c = metrics.networkStats) !== null && _c !== void 0 ? _c : []) {
+            rxBytesPerSecond += getNumber(adapter.rx_sec);
+            txBytesPerSecond += getNumber(adapter.tx_sec);
         }
         networkRxMb.push((rxBytesPerSecond * intervalSeconds) / BYTES_PER_MB);
         networkTxMb.push((txBytesPerSecond * intervalSeconds) / BYTES_PER_MB);
-        diskReadMb.push((getNumber(fsStats.rx_sec) * intervalSeconds) / BYTES_PER_MB);
-        diskWriteMb.push((getNumber(fsStats.wx_sec) * intervalSeconds) / BYTES_PER_MB);
+        diskReadMb.push((getNumber((_d = metrics.fsStats) === null || _d === void 0 ? void 0 : _d.rx_sec) * intervalSeconds) / BYTES_PER_MB);
+        diskWriteMb.push((getNumber((_e = metrics.fsStats) === null || _e === void 0 ? void 0 : _e.wx_sec) * intervalSeconds) / BYTES_PER_MB);
     }
     return {
         sample_count: samples.length,

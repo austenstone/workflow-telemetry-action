@@ -12,22 +12,24 @@ import {
 const HOST = 'localhost'
 const BYTES_PER_MB = 1024 * 1024
 
+// The fields we read from a sample's dynamic blob. Optional because any metric
+// can be missing when a collection partially fails (see the errors array).
+interface SampledMetrics {
+  readonly currentLoad?: { readonly currentLoad?: number }
+  readonly mem?: { readonly active?: number }
+  readonly networkStats?: readonly {
+    readonly rx_sec?: number
+    readonly tx_sec?: number
+  }[]
+  readonly fsStats?: { readonly rx_sec?: number; readonly wx_sec?: number }
+}
+
 function round(value: number): number {
   return Math.round(value * 100) / 100
 }
 
-function getNumber(value: unknown): number {
+function getNumber(value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function getObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function getArray(value: unknown): readonly unknown[] {
-  return Array.isArray(value) ? value : []
 }
 
 function errorMessage(error: unknown): string {
@@ -91,33 +93,27 @@ function calculateSummary(
   const diskWriteMb: number[] = []
 
   for (const [index, sample] of samples.entries()) {
-    const dynamic = getObject(sample.dynamic)
-    const currentLoad = getObject(dynamic.currentLoad)
-    const mem = getObject(dynamic.mem)
-    const networkStats = getArray(dynamic.networkStats)
-    const fsStats = getObject(dynamic.fsStats)
+    const metrics = sample.dynamic as SampledMetrics
     const intervalSeconds = sampleIntervalSeconds(samples, index)
 
-    cpuLoads.push(getNumber(currentLoad.currentLoad))
-    memoryActiveMb.push(getNumber(mem.active) / BYTES_PER_MB)
+    cpuLoads.push(getNumber(metrics.currentLoad?.currentLoad))
+    memoryActiveMb.push(getNumber(metrics.mem?.active) / BYTES_PER_MB)
 
     let rxBytesPerSecond = 0
     let txBytesPerSecond = 0
 
-    for (const adapter of networkStats) {
-      const adapterStats = getObject(adapter)
-
-      rxBytesPerSecond += getNumber(adapterStats.rx_sec)
-      txBytesPerSecond += getNumber(adapterStats.tx_sec)
+    for (const adapter of metrics.networkStats ?? []) {
+      rxBytesPerSecond += getNumber(adapter.rx_sec)
+      txBytesPerSecond += getNumber(adapter.tx_sec)
     }
 
     networkRxMb.push((rxBytesPerSecond * intervalSeconds) / BYTES_PER_MB)
     networkTxMb.push((txBytesPerSecond * intervalSeconds) / BYTES_PER_MB)
     diskReadMb.push(
-      (getNumber(fsStats.rx_sec) * intervalSeconds) / BYTES_PER_MB
+      (getNumber(metrics.fsStats?.rx_sec) * intervalSeconds) / BYTES_PER_MB
     )
     diskWriteMb.push(
-      (getNumber(fsStats.wx_sec) * intervalSeconds) / BYTES_PER_MB
+      (getNumber(metrics.fsStats?.wx_sec) * intervalSeconds) / BYTES_PER_MB
     )
   }
 
