@@ -44,7 +44,8 @@ async function runAction(): Promise<void> {
 
   await exportCollector({
     port,
-    outputPath: core.getInput('output_path') || 'telemetry.json'
+    outputPath: core.getInput('output_path') || 'telemetry.json',
+    githubToken: core.getInput('github_token')
   })
 }
 

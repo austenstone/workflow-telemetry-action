@@ -18,11 +18,17 @@ inputs:
     description: "Local collector HTTP server port"
     default: "7777"
     required: false
+  github_token:
+    description: "Token used to read workflow job metadata and step traces (needs actions: read). Only used in export mode."
+    default: ${{ github.token }}
+    required: false
 outputs:
   telemetry_path:
     description: "Path to the exported telemetry JSON"
   sample_count:
     description: "Number of telemetry samples exported"
+  job_id:
+    description: "Numeric API id of the workflow job the telemetry was collected from"
 runs:
   using: "node24"
   main: dist/index.js

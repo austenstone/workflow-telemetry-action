@@ -1,0 +1,72 @@
+name: telemetry-selftest
+
+on:
+  push:
+    branches:
+      - "test/job-telemetry"
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - run: npm ci
+
+      - run: npm run all
+
+      - name: Start telemetry
+        uses: ./
+        with:
+          mode: start
+          metric_frequency: "1"
+
+      - name: Do some work
+        run: |
+          echo "burning a little cpu and io"
+          for i in $(seq 1 5); do
+            dd if=/dev/zero of=telemetry-load-$i.bin bs=1M count=64 2>/dev/null
+            sha256sum telemetry-load-$i.bin > /dev/null
+          done
+          rm -f telemetry-load-*.bin
+          sleep 5
+
+      - name: Export telemetry
+        id: telemetry
+        uses: ./
+        with:
+          mode: export
+          output_path: telemetry.json
+
+      - name: Show outputs
+        run: |
+          echo "telemetry_path = ${{ steps.telemetry.outputs.telemetry_path }}"
+          echo "sample_count   = ${{ steps.telemetry.outputs.sample_count }}"
+          echo "job_id         = ${{ steps.telemetry.outputs.job_id }}"
+
+      - name: Inspect job block in telemetry.json
+        run: |
+          echo "=== schema_version ==="
+          jq '.schema_version' telemetry.json
+          echo "=== job (without steps) ==="
+          jq '.job | del(.steps)' telemetry.json
+          echo "=== steps ==="
+          jq '.job.steps' telemetry.json
+          echo "=== assertions ==="
+          test "$(jq -r '.job.id' telemetry.json)" != "null" || { echo "FAIL: job.id is null"; exit 1; }
+          test "$(jq -r '.job.steps | length' telemetry.json)" -gt 0 || { echo "FAIL: no steps captured"; exit 1; }
+          echo "PASS: job id and steps captured"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telemetry
+          path: telemetry.json

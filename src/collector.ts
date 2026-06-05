@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import { promises as fs } from 'fs'
 import * as http from 'http'
 import * as path from 'path'
+import { collectJob, formatStepTrace } from './job'
 import * as logger from './logger'
 import { CollectorOptions, ExportOptions, TelemetryExport } from './types'
 
@@ -157,20 +158,30 @@ export async function exportCollector(options: ExportOptions): Promise<void> {
   const metrics = await parseMetrics(
     await request('GET', options.port, '/metrics')
   )
+  const job = await collectJob(options.githubToken)
+
+  if (job) {
+    for (const line of formatStepTrace(job)) {
+      logger.info(line)
+    }
+  }
+
+  const telemetry: TelemetryExport = { ...metrics, job }
   const outputPath = path.resolve(options.outputPath)
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true })
   await fs.writeFile(
     outputPath,
-    `${JSON.stringify(metrics, null, 2)}\n`,
+    `${JSON.stringify(telemetry, null, 2)}\n`,
     'utf8'
   )
 
   core.setOutput('telemetry_path', outputPath)
-  core.setOutput('sample_count', String(metrics.summary.sample_count))
+  core.setOutput('sample_count', String(telemetry.summary.sample_count))
+  core.setOutput('job_id', job ? String(job.id) : '')
 
   logger.info(
-    `Wrote ${metrics.summary.sample_count} telemetry samples to ${outputPath}`
+    `Wrote ${telemetry.summary.sample_count} telemetry samples to ${outputPath}`
   )
 
   try {

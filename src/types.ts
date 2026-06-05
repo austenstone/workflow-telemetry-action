@@ -24,6 +24,31 @@ export interface TelemetryError {
   readonly message: string
 }
 
+export interface TelemetryStep {
+  readonly number: number | null
+  readonly name: string
+  readonly status: string
+  readonly conclusion: string | null
+  readonly started_at: string | null
+  readonly completed_at: string | null
+  readonly duration_ms: number | null
+}
+
+export interface TelemetryJob {
+  readonly id: number
+  readonly name: string
+  readonly status: string
+  readonly conclusion: string | null
+  readonly runner_name: string | null
+  readonly runner_group_name: string | null
+  readonly run_id: number
+  readonly run_attempt: number | null
+  readonly html_url: string | null
+  readonly started_at: string | null
+  readonly completed_at: string | null
+  readonly steps: TelemetryStep[]
+}
+
 export interface TelemetrySummary {
   readonly sample_count: number
   readonly cpu_load_avg: number
@@ -36,7 +61,7 @@ export interface TelemetrySummary {
 }
 
 export interface TelemetryExport {
-  readonly schema_version: '2'
+  readonly schema_version: '3'
   readonly source: TelemetrySource
   readonly started_at: string
   readonly finished_at: string
@@ -44,6 +69,7 @@ export interface TelemetryExport {
   readonly static: JsonValue
   readonly samples: TelemetrySample[]
   readonly summary: TelemetrySummary
+  readonly job: TelemetryJob | null
   readonly errors: TelemetryError[]
 }
 
@@ -55,4 +81,5 @@ export interface CollectorOptions {
 export interface ExportOptions {
   readonly port: number
   readonly outputPath: string
+  readonly githubToken: string
 }

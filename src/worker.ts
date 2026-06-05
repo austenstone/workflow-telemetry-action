@@ -146,7 +146,7 @@ function createTelemetryExport(
   )
 
   return {
-    schema_version: '2',
+    schema_version: '3',
     source: {
       name: 'systeminformation',
       version: si.version()
@@ -157,6 +157,7 @@ function createTelemetryExport(
     static: staticData,
     samples: windowSamples,
     summary: calculateSummary(windowSamples),
+    job: null,
     errors
   }
 }
