@@ -48,6 +48,12 @@ export interface TelemetrySummary {
     readonly disk_read_mb_total: number;
     readonly disk_write_mb_total: number;
 }
+export interface TelemetryRunner {
+    readonly environment: string | null;
+    readonly os: string | null;
+    readonly arch: string | null;
+    readonly name: string | null;
+}
 export interface TelemetryExport {
     readonly schema_version: '3';
     readonly source: TelemetrySource;
@@ -55,6 +61,7 @@ export interface TelemetryExport {
     readonly finished_at: string;
     readonly frequency_ms: number;
     readonly static: JsonValue;
+    readonly runner: TelemetryRunner;
     readonly samples: TelemetrySample[];
     readonly summary: TelemetrySummary;
     readonly job: TelemetryJob | null;

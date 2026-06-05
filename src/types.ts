@@ -60,6 +60,17 @@ export interface TelemetrySummary {
   readonly disk_write_mb_total: number
 }
 
+// Runner identity from GitHub's default env vars. Kept separate from `static`
+// (which is verbatim systeminformation output) since these are GitHub-provided
+// facts, not host introspection. `environment` (github-hosted vs self-hosted)
+// is the only billing-relevant signal that can't be inferred any other way.
+export interface TelemetryRunner {
+  readonly environment: string | null
+  readonly os: string | null
+  readonly arch: string | null
+  readonly name: string | null
+}
+
 export interface TelemetryExport {
   readonly schema_version: '3'
   readonly source: TelemetrySource
@@ -67,6 +78,7 @@ export interface TelemetryExport {
   readonly finished_at: string
   readonly frequency_ms: number
   readonly static: JsonValue
+  readonly runner: TelemetryRunner
   readonly samples: TelemetrySample[]
   readonly summary: TelemetrySummary
   readonly job: TelemetryJob | null

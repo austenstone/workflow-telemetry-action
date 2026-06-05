@@ -59147,6 +59147,19 @@ function toJsonValue(value) {
     }
     return JSON.parse(json);
 }
+// GitHub sets these for every job. Kept separate from the systeminformation
+// `static` blob since they're GitHub-provided facts, not host introspection.
+// `environment` (github-hosted vs self-hosted) is the only billing-relevant
+// signal that can't be inferred any other way. Captured once.
+function collectRunnerInfo() {
+    var _a, _b, _c, _d;
+    return {
+        environment: (_a = process.env.RUNNER_ENVIRONMENT) !== null && _a !== void 0 ? _a : null,
+        os: (_b = process.env.RUNNER_OS) !== null && _b !== void 0 ? _b : null,
+        arch: (_c = process.env.RUNNER_ARCH) !== null && _c !== void 0 ? _c : null,
+        name: (_d = process.env.RUNNER_NAME) !== null && _d !== void 0 ? _d : null
+    };
+}
 function collectJsonMetric(metric, collect, errors) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
@@ -59220,6 +59233,7 @@ function createTelemetryExport(startedAtMs, finishedAtMs, frequencyMs, staticDat
         finished_at: new Date(finishedAtMs).toISOString(),
         frequency_ms: frequencyMs,
         static: staticData,
+        runner: collectRunnerInfo(),
         samples: windowSamples,
         summary: calculateSummary(windowSamples),
         job: null,

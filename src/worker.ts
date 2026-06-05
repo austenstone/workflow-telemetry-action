@@ -5,6 +5,7 @@ import {
   JsonValue,
   TelemetryError,
   TelemetryExport,
+  TelemetryRunner,
   TelemetrySample,
   TelemetrySummary
 } from './types'
@@ -44,6 +45,19 @@ function toJsonValue(value: unknown): JsonValue {
   }
 
   return JSON.parse(json) as JsonValue
+}
+
+// GitHub sets these for every job. Kept separate from the systeminformation
+// `static` blob since they're GitHub-provided facts, not host introspection.
+// `environment` (github-hosted vs self-hosted) is the only billing-relevant
+// signal that can't be inferred any other way. Captured once.
+function collectRunnerInfo(): TelemetryRunner {
+  return {
+    environment: process.env.RUNNER_ENVIRONMENT ?? null,
+    os: process.env.RUNNER_OS ?? null,
+    arch: process.env.RUNNER_ARCH ?? null,
+    name: process.env.RUNNER_NAME ?? null
+  }
 }
 
 async function collectJsonMetric(
@@ -151,6 +165,7 @@ function createTelemetryExport(
     finished_at: new Date(finishedAtMs).toISOString(),
     frequency_ms: frequencyMs,
     static: staticData,
+    runner: collectRunnerInfo(),
     samples: windowSamples,
     summary: calculateSummary(windowSamples),
     job: null,
