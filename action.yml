@@ -31,8 +31,8 @@ inputs:
     default: telemetry
     required: false
   artifact_retention_days:
-    description: "Retention period (days) for the uploaded telemetry artifact. Empty uses the repository default."
-    default: ""
+    description: "Retention period (days) for the uploaded telemetry artifact."
+    default: 90
     required: false
   artifact_if_no_files_found:
     description: "Behavior when no telemetry file is found at upload time: warn, error, or ignore."
