@@ -56,9 +56,12 @@ export interface TelemetryRunner {
     readonly os: string | null;
     readonly arch: string | null;
     readonly name: string | null;
+    readonly env: {
+        readonly [key: string]: string;
+    };
 }
 export interface TelemetryExport {
-    readonly schema_version: '3';
+    readonly schema_version: '4';
     readonly source: TelemetrySource;
     readonly started_at: string;
     readonly finished_at: string;
@@ -68,6 +71,7 @@ export interface TelemetryExport {
     readonly samples: TelemetrySample[];
     readonly summary: TelemetrySummary;
     readonly job: TelemetryJob | null;
+    readonly contexts: JsonValue | null;
     readonly errors: TelemetryError[];
 }
 export interface CollectorOptions {
@@ -78,4 +82,5 @@ export interface ExportOptions {
     readonly port: number;
     readonly outputPath: string;
     readonly githubToken: string;
+    readonly contexts: string;
 }

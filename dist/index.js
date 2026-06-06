@@ -135836,6 +135836,7 @@ exports.uploadTelemetryArtifact = uploadTelemetryArtifact;
 const artifact_1 = __nccwpck_require__(76846);
 const fs_1 = __nccwpck_require__(79896);
 const path = __importStar(__nccwpck_require__(16928));
+const collector_1 = __nccwpck_require__(49072);
 const logger = __importStar(__nccwpck_require__(86999));
 function fileExists(target) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -135849,14 +135850,17 @@ function fileExists(target) {
     });
 }
 /**
- * Upload the exported telemetry JSON as a workflow artifact directly from the
- * action, so callers don't need a separate `actions/upload-artifact` step.
+ * Upload the exported telemetry as a workflow artifact directly from the
+ * action, so callers don't need a separate `actions/upload-artifact` step. The
+ * export is split across sibling files (telemetry, system, contexts); all that
+ * exist are bundled into the one artifact.
  */
 function uploadTelemetryArtifact(options) {
     return __awaiter(this, void 0, void 0, function* () {
-        const filePath = path.resolve(options.filePath);
-        if (!(yield fileExists(filePath))) {
-            const message = `No telemetry file found at ${filePath} to upload as "${options.artifactName}"`;
+        const files = (0, collector_1.telemetryFiles)(options.filePath);
+        const mainFile = files.telemetry;
+        if (!(yield fileExists(mainFile))) {
+            const message = `No telemetry file found at ${mainFile} to upload as "${options.artifactName}"`;
             if (options.ifNoFilesFound === 'error') {
                 throw new Error(message);
             }
@@ -135865,10 +135869,17 @@ function uploadTelemetryArtifact(options) {
             }
             return;
         }
+        const candidates = [files.telemetry, files.system, files.contexts];
+        const present = [];
+        for (const candidate of candidates) {
+            if (yield fileExists(candidate)) {
+                present.push(candidate);
+            }
+        }
         const client = new artifact_1.DefaultArtifactClient();
-        const rootDirectory = path.dirname(filePath);
-        const { id, size } = yield client.uploadArtifact(options.artifactName, [filePath], rootDirectory, options.retentionDays ? { retentionDays: options.retentionDays } : {});
-        logger.info(`Uploaded telemetry artifact "${options.artifactName}" (id ${id !== null && id !== void 0 ? id : 'unknown'}, ${size !== null && size !== void 0 ? size : 0} bytes)`);
+        const rootDirectory = path.dirname(mainFile);
+        const { id, size } = yield client.uploadArtifact(options.artifactName, present, rootDirectory, options.retentionDays ? { retentionDays: options.retentionDays } : {});
+        logger.info(`Uploaded telemetry artifact "${options.artifactName}" with ${present.length} file(s) (id ${id !== null && id !== void 0 ? id : 'unknown'}, ${size !== null && size !== void 0 ? size : 0} bytes)`);
     });
 }
 
@@ -135922,8 +135933,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.startCollector = startCollector;
+exports.telemetryFiles = telemetryFiles;
 exports.exportCollector = exportCollector;
 const core = __importStar(__nccwpck_require__(37484));
 const child_process_1 = __nccwpck_require__(35317);
@@ -136021,6 +136044,40 @@ function startCollector(options) {
         logger.info(`Telemetry collector is healthy with pid ${(_a = child.pid) !== null && _a !== void 0 ? _a : 'unknown'}`);
     });
 }
+// Parse the `contexts` input (a JSON blob the caller builds from `${{
+// toJson(github) }}` etc.). Contexts can't be read from env by a JS action, so
+// this passthrough is the only way to capture github, strategy, matrix, needs,
+// and inputs. Invalid JSON is logged and dropped rather than failing the export.
+function parseContexts(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return null;
+    }
+    try {
+        return JSON.parse(trimmed);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`Ignoring contexts input: not valid JSON (${message})`);
+        return null;
+    }
+}
+function telemetryFiles(outputPath) {
+    const resolved = path.resolve(outputPath);
+    const dir = path.dirname(resolved);
+    const ext = path.extname(resolved) || '.json';
+    const base = path.basename(resolved, path.extname(resolved));
+    return {
+        telemetry: resolved,
+        system: path.join(dir, `${base}.system${ext}`),
+        contexts: path.join(dir, `${base}.contexts${ext}`)
+    };
+}
+function writeJson(file, data) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield fs_1.promises.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+    });
+}
 function exportCollector(options) {
     return __awaiter(this, void 0, void 0, function* () {
         logger.info(`Exporting telemetry from ${HOST}:${options.port}`);
@@ -136035,14 +136092,37 @@ function exportCollector(options) {
                 logger.info(line);
             }
         }
-        const telemetry = Object.assign(Object.assign({}, metrics), { job });
-        const outputPath = path.resolve(options.outputPath);
-        yield fs_1.promises.mkdir(path.dirname(outputPath), { recursive: true });
-        yield fs_1.promises.writeFile(outputPath, `${JSON.stringify(telemetry, null, 2)}\n`, 'utf8');
-        core.setOutput('telemetry_path', outputPath);
+        const telemetry = Object.assign(Object.assign({}, metrics), { job, contexts: parseContexts(options.contexts) });
+        // Split the single in-memory export into three sibling files: time-series
+        // (telemetry), host facts (system), and workflow contexts. The main file
+        // keeps pointers to its siblings so it stays self-describing.
+        const { static: staticData, runner, contexts } = telemetry, timeSeries = __rest(telemetry, ["static", "runner", "contexts"]);
+        const files = telemetryFiles(options.outputPath);
+        const systemDoc = {
+            schema_version: telemetry.schema_version,
+            runner,
+            static: staticData
+        };
+        const telemetryDoc = Object.assign(Object.assign({}, timeSeries), { system_file: path.basename(files.system), contexts_file: contexts === null ? null : path.basename(files.contexts) });
+        yield fs_1.promises.mkdir(path.dirname(files.telemetry), { recursive: true });
+        yield writeJson(files.telemetry, telemetryDoc);
+        yield writeJson(files.system, systemDoc);
+        if (contexts !== null) {
+            yield writeJson(files.contexts, {
+                schema_version: telemetry.schema_version,
+                contexts
+            });
+        }
+        core.setOutput('telemetry_path', files.telemetry);
+        core.setOutput('system_path', files.system);
+        core.setOutput('contexts_path', contexts === null ? '' : files.contexts);
         core.setOutput('sample_count', String(telemetry.summary.sample_count));
         core.setOutput('job_id', job ? String(job.id) : '');
-        logger.info(`Wrote ${telemetry.summary.sample_count} telemetry samples to ${outputPath}`);
+        logger.info(`Wrote ${telemetry.summary.sample_count} telemetry samples to ${files.telemetry}`);
+        logger.info(`Wrote system info to ${files.system}`);
+        if (contexts !== null) {
+            logger.info(`Wrote workflow contexts to ${files.contexts}`);
+        }
         try {
             yield request('POST', options.port, '/shutdown');
         }
@@ -136116,6 +136196,7 @@ const STATE_AUTO_UPLOAD = 'autoUpload';
 const STATE_PORT = 'port';
 const STATE_OUTPUT_PATH = 'outputPath';
 const STATE_TOKEN = 'githubToken';
+const STATE_CONTEXTS = 'contexts';
 const STATE_ARTIFACT_NAME = 'artifactName';
 const STATE_RETENTION = 'retentionDays';
 const STATE_IF_NO_FILES = 'ifNoFilesFound';
@@ -136153,6 +136234,7 @@ function runStart(port, frequencySeconds) {
             core.saveState(STATE_PORT, String(port));
             core.saveState(STATE_OUTPUT_PATH, core.getInput('output_path') || 'telemetry.json');
             core.saveState(STATE_TOKEN, core.getInput('github_token'));
+            core.saveState(STATE_CONTEXTS, core.getInput('contexts'));
             core.saveState(STATE_ARTIFACT_NAME, core.getInput('artifact_name') || 'telemetry');
             core.saveState(STATE_RETENTION, core.getInput('artifact_retention_days'));
             core.saveState(STATE_IF_NO_FILES, getIfNoFilesFound());
@@ -136172,7 +136254,8 @@ function runPost() {
             yield (0, collector_1.exportCollector)({
                 port,
                 outputPath,
-                githubToken: core.getState(STATE_TOKEN)
+                githubToken: core.getState(STATE_TOKEN),
+                contexts: core.getState(STATE_CONTEXTS)
             });
         }
         catch (error) {
@@ -136215,7 +136298,8 @@ function runAction() {
         yield (0, collector_1.exportCollector)({
             port,
             outputPath: core.getInput('output_path') || 'telemetry.json',
-            githubToken: core.getInput('github_token')
+            githubToken: core.getInput('github_token'),
+            contexts: core.getInput('contexts')
         });
     });
 }
@@ -136582,14 +136666,22 @@ function toJsonValue(value) {
 // GitHub sets these for every job. Kept separate from the systeminformation
 // `static` blob since they're GitHub-provided facts, not host introspection.
 // `environment` (github-hosted vs self-hosted) is the only billing-relevant
-// signal that can't be inferred any other way. Captured once.
+// signal that can't be inferred any other way. `env` is the full runner
+// environment, captured verbatim. Captured once at export, no per-sample cost.
 function collectRunnerInfo() {
     var _a, _b, _c, _d;
+    const env = {};
+    for (const [key, value] of Object.entries(process.env)) {
+        if (value !== undefined) {
+            env[key] = value;
+        }
+    }
     return {
         environment: (_a = process.env.RUNNER_ENVIRONMENT) !== null && _a !== void 0 ? _a : null,
         os: (_b = process.env.RUNNER_OS) !== null && _b !== void 0 ? _b : null,
         arch: (_c = process.env.RUNNER_ARCH) !== null && _c !== void 0 ? _c : null,
-        name: (_d = process.env.RUNNER_NAME) !== null && _d !== void 0 ? _d : null
+        name: (_d = process.env.RUNNER_NAME) !== null && _d !== void 0 ? _d : null,
+        env
     };
 }
 function collectJsonMetric(metric, collect, errors) {
@@ -136656,7 +136748,7 @@ function calculateSummary(samples) {
 function createTelemetryExport(startedAtMs, finishedAtMs, frequencyMs, staticData, samples, errors) {
     const windowSamples = samples.filter(sample => sample.time >= startedAtMs && sample.time <= finishedAtMs);
     return {
-        schema_version: '3',
+        schema_version: '4',
         source: {
             name: 'systeminformation',
             version: systeminformation_1.default.version()
@@ -136669,6 +136761,7 @@ function createTelemetryExport(startedAtMs, finishedAtMs, frequencyMs, staticDat
         samples: windowSamples,
         summary: calculateSummary(windowSamples),
         job: null,
+        contexts: null,
         errors
     };
 }
