@@ -30,10 +30,13 @@ export interface TelemetryJob {
     readonly status: string;
     readonly conclusion: string | null;
     readonly runner_name: string | null;
+    readonly runner_group_id: number | null;
     readonly runner_group_name: string | null;
+    readonly labels: string[];
     readonly run_id: number;
     readonly run_attempt: number | null;
     readonly html_url: string | null;
+    readonly created_at: string | null;
     readonly started_at: string | null;
     readonly completed_at: string | null;
     readonly steps: TelemetryStep[];

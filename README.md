@@ -6,6 +6,8 @@ No PR comments. No Markdown charts. No job summary rendering. The exported `tele
 
 ## Usage
 
+One step. Telemetry is exported and uploaded automatically in the action's `post` phase, so no separate export or `upload-artifact` step is needed.
+
 ```yaml
 jobs:
   test:
@@ -13,11 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Telemetry
+        uses: austenstone/workflow-telemetry-action@<sha>
+        with:
+          metric_frequency: "1"
+          upload_artifact: "true"
+          artifact_name: telemetry
+          artifact_retention_days: "200"
+
+      - run: npm test
+```
+
+The export + upload run via `post-if: always()`, so telemetry is captured even when a later step fails.
+
+### Manual export (legacy two-step)
+
+Leave `upload_artifact` unset (the default) to drive export yourself:
+
+```yaml
       - name: Start telemetry
         uses: austenstone/workflow-telemetry-action@<sha>
         with:
           mode: start
-          metric_frequency: "1"
 
       - run: npm test
 
@@ -38,9 +57,13 @@ jobs:
 | Input | Default | Description |
 | --- | --- | --- |
 | `mode` | `start` | `start` launches the local collector. `export` writes telemetry JSON. |
-| `output_path` | `telemetry.json` | Path to write telemetry JSON when `mode=export`. |
+| `output_path` | `telemetry.json` | Path to write telemetry JSON when exporting. |
 | `metric_frequency` | `1` | Metric collection frequency in seconds. |
 | `server_port` | `7777` | Local collector HTTP server port. |
+| `upload_artifact` | `false` | When `mode=start`, automatically export telemetry and upload it as an artifact in the `post` step. Removes the need for separate export/upload-artifact steps. |
+| `artifact_name` | `telemetry` | Name of the telemetry artifact uploaded by the post step. |
+| `artifact_retention_days` | `` | Retention period (days) for the uploaded artifact. Empty uses the repo default. |
+| `artifact_if_no_files_found` | `warn` | Behavior when no telemetry file is found at upload time: `warn`, `error`, or `ignore`. |
 
 ## Outputs
 

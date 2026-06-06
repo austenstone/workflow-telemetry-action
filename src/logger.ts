@@ -14,6 +14,10 @@ export function info(msg: string): void {
   core.info(`${LOG_HEADER} ${msg}`)
 }
 
+export function warn(msg: string): void {
+  core.warning(`${LOG_HEADER} ${msg}`)
+}
+
 export function error(msg: string | Error): void {
   if (typeof msg === 'string') {
     core.error(`${LOG_HEADER} ${msg}`)

@@ -58,10 +58,13 @@ export function toTelemetryJob(job: WorkflowJob): TelemetryJob {
     status: job.status,
     conclusion: job.conclusion,
     runner_name: job.runner_name ?? null,
+    runner_group_id: job.runner_group_id ?? null,
     runner_group_name: job.runner_group_name ?? null,
+    labels: job.labels ?? [],
     run_id: job.run_id,
     run_attempt: job.run_attempt ?? null,
     html_url: job.html_url ?? null,
+    created_at: job.created_at ?? null,
     started_at: job.started_at ?? null,
     completed_at: job.completed_at ?? null,
     steps

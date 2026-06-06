@@ -22,6 +22,22 @@ inputs:
     description: "Token used to read workflow job metadata and step traces (needs actions: read). Only used in export mode."
     default: ${{ github.token }}
     required: false
+  upload_artifact:
+    description: "When mode=start, automatically export telemetry and upload it as an artifact in the post step. Removes the need for separate export/upload-artifact steps."
+    default: "false"
+    required: false
+  artifact_name:
+    description: "Name of the telemetry artifact uploaded by the post step when upload_artifact is true."
+    default: telemetry
+    required: false
+  artifact_retention_days:
+    description: "Retention period (days) for the uploaded telemetry artifact. Empty uses the repository default."
+    default: ""
+    required: false
+  artifact_if_no_files_found:
+    description: "Behavior when no telemetry file is found at upload time: warn, error, or ignore."
+    default: warn
+    required: false
 outputs:
   telemetry_path:
     description: "Path to the exported telemetry JSON"
@@ -32,6 +48,8 @@ outputs:
 runs:
   using: "node24"
   main: dist/index.js
+  post: dist/index.js
+  post-if: always()
 branding:
   icon: "activity"
   color: "yellow"
