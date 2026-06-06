@@ -1,99 +1,85 @@
 # workflow-telemetry-action
 
-Minimal GitHub Action for collecting raw `systeminformation` telemetry from a workflow job as JSON.
-
-No PR comments. No Markdown charts. No job summary rendering. The exported `telemetry.json` is the product.
+Collect raw `systeminformation` telemetry from a workflow job as JSON. No PR comments, no charts, no job summaries. The JSON is the product.
 
 ## Usage
 
-One step. Telemetry is exported and uploaded automatically in the action's `post` phase, so no separate export or `upload-artifact` step is needed.
+One step. Telemetry exports and uploads automatically in the `post` phase (`post-if: always()`, so it captures even when a later step fails).
 
 ```yaml
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+- uses: actions/checkout@v4
 
-      - name: Telemetry
-        uses: austenstone/workflow-telemetry-action@<sha>
-        with:
-          metric_frequency: "1"
-          upload_artifact: "true"
-          artifact_name: telemetry
-          artifact_retention_days: "200"
+- uses: austenstone/workflow-telemetry-action@<sha>
+  with:
+    contexts: ${{ toJson(github) }} # optional
 
-      - run: npm test
+- run: npm test
 ```
 
-The export + upload run via `post-if: always()`, so telemetry is captured even when a later step fails.
+### Manual export
 
-### Manual export (legacy two-step)
-
-Leave `upload_artifact` unset (the default) to drive export yourself:
+Leave `upload_artifact` unset to drive it yourself:
 
 ```yaml
-      - name: Start telemetry
-        uses: austenstone/workflow-telemetry-action@<sha>
-        with:
-          mode: start
+- uses: austenstone/workflow-telemetry-action@<sha>
+  with:
+    mode: start
 
-      - run: npm test
+- run: npm test
 
-      - name: Export telemetry
-        uses: austenstone/workflow-telemetry-action@<sha>
-        with:
-          mode: export
-          output_path: telemetry.json
+- uses: austenstone/workflow-telemetry-action@<sha>
+  with:
+    mode: export
+    output_path: telemetry.json
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: telemetry
-          path: telemetry.json
+- uses: actions/upload-artifact@v4
+  with:
+    name: telemetry
+    path: telemetry*.json
 ```
 
 ## Inputs
 
 | Input | Default | Description |
 | --- | --- | --- |
-| `mode` | `start` | `start` launches the local collector. `export` writes telemetry JSON. |
-| `output_path` | `telemetry.json` | Path to write telemetry JSON when exporting. |
-| `metric_frequency` | `1` | Metric collection frequency in seconds. |
-| `server_port` | `7777` | Local collector HTTP server port. |
-| `upload_artifact` | `false` | When `mode=start`, automatically export telemetry and upload it as an artifact in the `post` step. Removes the need for separate export/upload-artifact steps. |
-| `artifact_name` | `telemetry` | Name of the telemetry artifact uploaded by the post step. |
-| `artifact_retention_days` | `` | Retention period (days) for the uploaded artifact. Empty uses the repo default. |
-| `artifact_if_no_files_found` | `warn` | Behavior when no telemetry file is found at upload time: `warn`, `error`, or `ignore`. |
+| `mode` | `start` | `start` launches the collector. `export` writes the JSON. |
+| `output_path` | `telemetry.json` | Where to write the telemetry JSON. |
+| `contexts` | `` | JSON of workflow contexts to capture, e.g. `${{ toJson(github) }}`. A JS action can't read these from env. Captured verbatim (may contain secrets). |
+| `metric_frequency` | `1` | Sample frequency in seconds. |
+| `server_port` | `7777` | Local collector HTTP port. |
+| `github_token` | `${{ github.token }}` | Reads job metadata + step traces (needs `actions: read`). |
+| `upload_artifact` | `true` | Export + upload in the `post` step automatically. |
+| `artifact_name` | `telemetry` | Artifact name. |
+| `artifact_retention_days` | `` | Retention in days. Empty = repo default. |
+| `artifact_if_no_files_found` | `warn` | `warn`, `error`, or `ignore`. |
 
 ## Outputs
 
 | Output | Description |
 | --- | --- |
-| `telemetry_path` | Absolute path to the exported telemetry JSON. |
-| `sample_count` | Number of exported telemetry samples. |
+| `telemetry_path` | Path to the telemetry JSON. |
+| `system_path` | Path to the system info JSON. |
+| `contexts_path` | Path to the contexts JSON. Empty if no `contexts` input. |
+| `sample_count` | Number of samples. |
+| `job_id` | API id of the workflow job. |
 
-## JSON shape
+## Output files
+
+One artifact, up to three files. Names derive from `output_path`:
+
+- **`telemetry.json`** — time-series: `samples`, `summary`, `job`, `errors`, plus `system_file` / `contexts_file` pointers.
+- **`telemetry.system.json`** — `runner` (identity + full env) and `static` (host facts).
+- **`telemetry.contexts.json`** — the `contexts` blob. Only written when `contexts` is provided.
 
 ```json
 {
-  "schema_version": "2",
-  "source": {
-    "name": "systeminformation",
-    "version": "5.21.24"
-  },
+  "schema_version": "4",
+  "source": { "name": "systeminformation", "version": "5.21.24" },
   "started_at": "2026-06-04T12:00:00.000Z",
   "finished_at": "2026-06-04T12:01:00.000Z",
   "frequency_ms": 1000,
-  "static": {
-    "...": "raw si.getStaticData() payload"
-  },
   "samples": [
-    {
-      "time": 1780000000000,
-      "dynamic": {
-        "...": "raw si.getDynamicData('', '*') payload"
-      }
-    }
+    { "time": 1780000000000, "dynamic": { "...": "si.getDynamicData('', '*')" } }
   ],
   "summary": {
     "sample_count": 10,
@@ -105,16 +91,11 @@ Leave `upload_artifact` unset (the default) to drive export yourself:
     "disk_read_mb_total": 100,
     "disk_write_mb_total": 200
   },
-  "errors": [
-    {
-      "time": 1780000000000,
-      "metric": "getDynamicData",
-      "message": "metric collection failed"
-    }
-  ]
+  "job": { "...": "GitHub job metadata + step traces" },
+  "errors": [],
+  "system_file": "telemetry.system.json",
+  "contexts_file": "telemetry.contexts.json"
 }
 ```
 
-`static` is collected once with `si.getStaticData()` outside the timed sample window. Each sample stores the raw `si.getDynamicData('', '*')` payload. `summary` is derived convenience data, and metric collection failures are recorded in `errors` instead of failing `/collect`.
-
-The measured sample window starts after the `mode=start` action has prepared the collector and stops immediately when the `mode=export` action begins. Export writes the samples already collected in between; it does not force an extra export-time dynamic sample.
+The sample window starts after `mode=start` finishes preparing the collector and stops when `mode=export` begins. `static` is collected once outside that window; each sample stores the raw `si.getDynamicData('', '*')`. `summary` is derived. Metric failures land in `errors` instead of failing collection.

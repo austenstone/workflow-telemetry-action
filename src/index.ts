@@ -13,6 +13,7 @@ const STATE_AUTO_UPLOAD = 'autoUpload'
 const STATE_PORT = 'port'
 const STATE_OUTPUT_PATH = 'outputPath'
 const STATE_TOKEN = 'githubToken'
+const STATE_CONTEXTS = 'contexts'
 const STATE_ARTIFACT_NAME = 'artifactName'
 const STATE_RETENTION = 'retentionDays'
 const STATE_IF_NO_FILES = 'ifNoFilesFound'
@@ -66,6 +67,7 @@ async function runStart(port: number, frequencySeconds: number): Promise<void> {
       core.getInput('output_path') || 'telemetry.json'
     )
     core.saveState(STATE_TOKEN, core.getInput('github_token'))
+    core.saveState(STATE_CONTEXTS, core.getInput('contexts'))
     core.saveState(
       STATE_ARTIFACT_NAME,
       core.getInput('artifact_name') || 'telemetry'
@@ -92,7 +94,8 @@ async function runPost(): Promise<void> {
     await exportCollector({
       port,
       outputPath,
-      githubToken: core.getState(STATE_TOKEN)
+      githubToken: core.getState(STATE_TOKEN),
+      contexts: core.getState(STATE_CONTEXTS)
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
@@ -144,7 +147,8 @@ async function runAction(): Promise<void> {
   await exportCollector({
     port,
     outputPath: core.getInput('output_path') || 'telemetry.json',
-    githubToken: core.getInput('github_token')
+    githubToken: core.getInput('github_token'),
+    contexts: core.getInput('contexts')
   })
 }
 

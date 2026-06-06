@@ -22,6 +22,10 @@ inputs:
     description: "Token used to read workflow job metadata and step traces (needs actions: read). Only used in export mode."
     default: ${{ github.token }}
     required: false
+  contexts:
+    description: "JSON blob of workflow contexts to capture (github, strategy, matrix, needs, inputs). A JS action can't read these from env, so pass them in from the workflow using toJson, e.g. contexts: the toJson of the github context. Captured verbatim (may contain secrets). Only used in export mode."
+    default: ""
+    required: false
   upload_artifact:
     description: "Automatically export telemetry and upload it as an artifact in the post step. On by default so a single start step needs no export/upload-artifact steps. Set to false to drive export yourself with mode=export."
     default: "true"
@@ -40,7 +44,11 @@ inputs:
     required: false
 outputs:
   telemetry_path:
-    description: "Path to the exported telemetry JSON"
+    description: "Path to the exported telemetry JSON (time-series, summary, job)"
+  system_path:
+    description: "Path to the exported system info JSON (runner identity, env, static host facts)"
+  contexts_path:
+    description: "Path to the exported workflow contexts JSON. Empty when no contexts input was provided."
   sample_count:
     description: "Number of telemetry samples exported"
   job_id:

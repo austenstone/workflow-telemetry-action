@@ -5,7 +5,12 @@ import * as http from 'http'
 import * as path from 'path'
 import { collectJob, formatStepTrace } from './job'
 import * as logger from './logger'
-import { CollectorOptions, ExportOptions, TelemetryExport } from './types'
+import {
+  CollectorOptions,
+  ExportOptions,
+  JsonValue,
+  TelemetryExport
+} from './types'
 
 const HOST = 'localhost'
 const WORKER_ARG = '--worker'
@@ -140,6 +145,52 @@ export async function startCollector(options: CollectorOptions): Promise<void> {
   )
 }
 
+// Parse the `contexts` input (a JSON blob the caller builds from `${{
+// toJson(github) }}` etc.). Contexts can't be read from env by a JS action, so
+// this passthrough is the only way to capture github, strategy, matrix, needs,
+// and inputs. Invalid JSON is logged and dropped rather than failing the export.
+function parseContexts(raw: string): JsonValue | null {
+  const trimmed = raw.trim()
+
+  if (!trimmed) {
+    return null
+  }
+
+  try {
+    return JSON.parse(trimmed) as JsonValue
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`Ignoring contexts input: not valid JSON (${message})`)
+    return null
+  }
+}
+
+// The export is split across three sibling files in one artifact so consumers
+// can grab just what they need. Names are derived from the configured output
+// path: telemetry.json -> telemetry.system.json + telemetry.contexts.json.
+export interface TelemetryFiles {
+  readonly telemetry: string
+  readonly system: string
+  readonly contexts: string
+}
+
+export function telemetryFiles(outputPath: string): TelemetryFiles {
+  const resolved = path.resolve(outputPath)
+  const dir = path.dirname(resolved)
+  const ext = path.extname(resolved) || '.json'
+  const base = path.basename(resolved, path.extname(resolved))
+
+  return {
+    telemetry: resolved,
+    system: path.join(dir, `${base}.system${ext}`),
+    contexts: path.join(dir, `${base}.contexts${ext}`)
+  }
+}
+
+async function writeJson(file: string, data: unknown): Promise<void> {
+  await fs.writeFile(file, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+}
+
 export async function exportCollector(options: ExportOptions): Promise<void> {
   logger.info(`Exporting telemetry from ${HOST}:${options.port}`)
 
@@ -166,23 +217,55 @@ export async function exportCollector(options: ExportOptions): Promise<void> {
     }
   }
 
-  const telemetry: TelemetryExport = { ...metrics, job }
-  const outputPath = path.resolve(options.outputPath)
+  const telemetry: TelemetryExport = {
+    ...metrics,
+    job,
+    contexts: parseContexts(options.contexts)
+  }
 
-  await fs.mkdir(path.dirname(outputPath), { recursive: true })
-  await fs.writeFile(
-    outputPath,
-    `${JSON.stringify(telemetry, null, 2)}\n`,
-    'utf8'
-  )
+  // Split the single in-memory export into three sibling files: time-series
+  // (telemetry), host facts (system), and workflow contexts. The main file
+  // keeps pointers to its siblings so it stays self-describing.
+  const { static: staticData, runner, contexts, ...timeSeries } = telemetry
+  const files = telemetryFiles(options.outputPath)
 
-  core.setOutput('telemetry_path', outputPath)
+  const systemDoc = {
+    schema_version: telemetry.schema_version,
+    runner,
+    static: staticData
+  }
+
+  const telemetryDoc = {
+    ...timeSeries,
+    system_file: path.basename(files.system),
+    contexts_file: contexts === null ? null : path.basename(files.contexts)
+  }
+
+  await fs.mkdir(path.dirname(files.telemetry), { recursive: true })
+  await writeJson(files.telemetry, telemetryDoc)
+  await writeJson(files.system, systemDoc)
+
+  if (contexts !== null) {
+    await writeJson(files.contexts, {
+      schema_version: telemetry.schema_version,
+      contexts
+    })
+  }
+
+  core.setOutput('telemetry_path', files.telemetry)
+  core.setOutput('system_path', files.system)
+  core.setOutput('contexts_path', contexts === null ? '' : files.contexts)
   core.setOutput('sample_count', String(telemetry.summary.sample_count))
   core.setOutput('job_id', job ? String(job.id) : '')
 
   logger.info(
-    `Wrote ${telemetry.summary.sample_count} telemetry samples to ${outputPath}`
+    `Wrote ${telemetry.summary.sample_count} telemetry samples to ${files.telemetry}`
   )
+  logger.info(`Wrote system info to ${files.system}`)
+
+  if (contexts !== null) {
+    logger.info(`Wrote workflow contexts to ${files.contexts}`)
+  }
 
   try {
     await request('POST', options.port, '/shutdown')

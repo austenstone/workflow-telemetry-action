@@ -67,15 +67,18 @@ export interface TelemetrySummary {
 // (which is verbatim systeminformation output) since these are GitHub-provided
 // facts, not host introspection. `environment` (github-hosted vs self-hosted)
 // is the only billing-relevant signal that can't be inferred any other way.
+// `env` is the full runner environment captured verbatim, including secrets.
+// Captured once at export, so it has no per-sample cost.
 export interface TelemetryRunner {
   readonly environment: string | null
   readonly os: string | null
   readonly arch: string | null
   readonly name: string | null
+  readonly env: { readonly [key: string]: string }
 }
 
 export interface TelemetryExport {
-  readonly schema_version: '3'
+  readonly schema_version: '4'
   readonly source: TelemetrySource
   readonly started_at: string
   readonly finished_at: string
@@ -85,6 +88,10 @@ export interface TelemetryExport {
   readonly samples: TelemetrySample[]
   readonly summary: TelemetrySummary
   readonly job: TelemetryJob | null
+  // Workflow contexts (github, runner, strategy, matrix, needs, inputs, ...)
+  // that a JS action can't read from env. Only populated when the caller pipes
+  // them in via the `contexts` input as `${{ toJson(...) }}`. Captured verbatim.
+  readonly contexts: JsonValue | null
   readonly errors: TelemetryError[]
 }
 
@@ -97,4 +104,7 @@ export interface ExportOptions {
   readonly port: number
   readonly outputPath: string
   readonly githubToken: string
+  // Raw JSON string from the `contexts` action input. Parsed at export time.
+  // Empty string means no contexts were supplied.
+  readonly contexts: string
 }

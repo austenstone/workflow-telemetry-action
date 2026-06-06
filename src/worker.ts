@@ -50,13 +50,23 @@ function toJsonValue(value: unknown): JsonValue {
 // GitHub sets these for every job. Kept separate from the systeminformation
 // `static` blob since they're GitHub-provided facts, not host introspection.
 // `environment` (github-hosted vs self-hosted) is the only billing-relevant
-// signal that can't be inferred any other way. Captured once.
+// signal that can't be inferred any other way. `env` is the full runner
+// environment, captured verbatim. Captured once at export, no per-sample cost.
 function collectRunnerInfo(): TelemetryRunner {
+  const env: Record<string, string> = {}
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value
+    }
+  }
+
   return {
     environment: process.env.RUNNER_ENVIRONMENT ?? null,
     os: process.env.RUNNER_OS ?? null,
     arch: process.env.RUNNER_ARCH ?? null,
-    name: process.env.RUNNER_NAME ?? null
+    name: process.env.RUNNER_NAME ?? null,
+    env
   }
 }
 
@@ -156,7 +166,7 @@ function createTelemetryExport(
   )
 
   return {
-    schema_version: '3',
+    schema_version: '4',
     source: {
       name: 'systeminformation',
       version: si.version()
@@ -169,6 +179,7 @@ function createTelemetryExport(
     samples: windowSamples,
     summary: calculateSummary(windowSamples),
     job: null,
+    contexts: null,
     errors
   }
 }
