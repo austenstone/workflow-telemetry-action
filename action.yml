@@ -23,8 +23,8 @@ inputs:
     default: ${{ github.token }}
     required: false
   upload_artifact:
-    description: "When mode=start, automatically export telemetry and upload it as an artifact in the post step. Removes the need for separate export/upload-artifact steps."
-    default: "false"
+    description: "Automatically export telemetry and upload it as an artifact in the post step. On by default so a single start step needs no export/upload-artifact steps. Set to false to drive export yourself with mode=export."
+    default: "true"
     required: false
   artifact_name:
     description: "Name of the telemetry artifact uploaded by the post step when upload_artifact is true."
