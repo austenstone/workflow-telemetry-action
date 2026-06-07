@@ -77,6 +77,7 @@ export interface TelemetryExport {
 export interface CollectorOptions {
     readonly port: number;
     readonly frequencyMs: number;
+    readonly metricTimeoutMs: number;
 }
 export interface ExportOptions {
     readonly port: number;

@@ -46,6 +46,7 @@ Leave `upload_artifact` unset to drive it yourself:
 | `output_path` | `telemetry.json` | Where to write the telemetry JSON. |
 | `contexts` | `` | JSON of workflow contexts to capture, e.g. `${{ toJson(github) }}`. A JS action can't read these from env. Captured verbatim (may contain secrets). |
 | `metric_frequency` | `1` | Sample frequency in seconds. Use `0` to sample continuously, starting the next dynamic metric collection as soon as the previous one completes. |
+| `metric_timeout_ms` | `2000` | Per-metric collection timeout in milliseconds. Timed-out metrics are omitted from that sample and recorded in `errors`. Use `0` to disable. |
 | `server_port` | `7777` | Local collector HTTP port. |
 | `github_token` | `${{ github.token }}` | Reads job metadata + step traces (needs `actions: read`). |
 | `upload_artifact` | `true` | Export + upload in the `post` step automatically. |

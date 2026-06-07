@@ -73,17 +73,38 @@ function collectRunnerInfo(): TelemetryRunner {
 async function collectJsonMetric(
   metric: string,
   collect: () => Promise<unknown>,
+  timeoutMs: number,
   errors: TelemetryError[]
 ): Promise<JsonValue | null> {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+
   try {
-    return toJsonValue(await collect())
+    const value =
+      timeoutMs > 0
+        ? await Promise.race([
+            collect(),
+            new Promise<never>((_, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error(`timed out after ${timeoutMs}ms`)),
+                timeoutMs
+              )
+            })
+          ])
+        : await collect()
+
+    return toJsonValue(value)
   } catch (error: unknown) {
     errors.push({ time: Date.now(), metric, message: errorMessage(error) })
     return null
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout)
+    }
   }
 }
 
 async function collectDynamicData(
+  timeoutMs: number,
   errors: TelemetryError[]
 ): Promise<JsonValue> {
   const [currentLoad, mem, networkStats, fsStats, fsSize, disksIO] =
@@ -91,17 +112,34 @@ async function collectDynamicData(
       collectJsonMetric(
         'currentLoad',
         async () => await si.currentLoad(),
+        timeoutMs,
         errors
       ),
-      collectJsonMetric('mem', async () => await si.mem(), errors),
+      collectJsonMetric('mem', async () => await si.mem(), timeoutMs, errors),
       collectJsonMetric(
         'networkStats',
-        async () => await si.networkStats(),
+        async () => await si.networkStats('_'),
+        timeoutMs,
         errors
       ),
-      collectJsonMetric('fsStats', async () => await si.fsStats(), errors),
-      collectJsonMetric('fsSize', async () => await si.fsSize(), errors),
-      collectJsonMetric('disksIO', async () => await si.disksIO(), errors)
+      collectJsonMetric(
+        'fsStats',
+        async () => await si.fsStats(),
+        timeoutMs,
+        errors
+      ),
+      collectJsonMetric(
+        'fsSize',
+        async () => await si.fsSize(),
+        timeoutMs,
+        errors
+      ),
+      collectJsonMetric(
+        'disksIO',
+        async () => await si.disksIO(),
+        timeoutMs,
+        errors
+      )
     ])
 
   return {
@@ -261,6 +299,7 @@ export async function startWorkerServer(
     const collected = await collectJsonMetric(
       'getStaticData',
       async () => await si.getStaticData(),
+      0,
       errors
     )
 
@@ -446,7 +485,7 @@ export async function startWorkerServer(
     collectionInFlight = (async () => {
       samples.push({
         time,
-        dynamic: await collectDynamicData(errors)
+        dynamic: await collectDynamicData(options.metricTimeoutMs, errors)
       })
     })()
 

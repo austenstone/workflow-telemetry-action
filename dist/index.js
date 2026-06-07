@@ -136029,11 +136029,11 @@ function routeWithTime(route) {
 function startCollector(options) {
     return __awaiter(this, void 0, void 0, function* () {
         var _a;
-        logger.info(`Starting telemetry collector on ${HOST}:${options.port} every ${options.frequencyMs}ms`);
+        logger.info(`Starting telemetry collector on ${HOST}:${options.port} every ${options.frequencyMs}ms with metric timeout ${options.metricTimeoutMs}ms`);
         const child = (0, child_process_1.spawn)(process.execPath, [__filename, WORKER_ARG], {
             detached: true,
             stdio: 'ignore',
-            env: Object.assign(Object.assign({}, process.env), { WORKFLOW_TELEMETRY_SERVER_PORT: String(options.port), WORKFLOW_TELEMETRY_FREQUENCY_MS: String(options.frequencyMs) })
+            env: Object.assign(Object.assign({}, process.env), { WORKFLOW_TELEMETRY_SERVER_PORT: String(options.port), WORKFLOW_TELEMETRY_FREQUENCY_MS: String(options.frequencyMs), WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS: String(options.metricTimeoutMs) })
         });
         child.unref();
         yield waitForHealth(options.port);
@@ -136200,6 +136200,7 @@ const STATE_CONTEXTS = 'contexts';
 const STATE_ARTIFACT_NAME = 'artifactName';
 const STATE_RETENTION = 'retentionDays';
 const STATE_IF_NO_FILES = 'ifNoFilesFound';
+const DEFAULT_METRIC_TIMEOUT_MS = 2000;
 function parsePositiveInteger(value, inputName) {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -136228,9 +136229,13 @@ function getIfNoFilesFound() {
     }
     return value;
 }
-function runStart(port, frequencySeconds) {
+function runStart(port, frequencySeconds, metricTimeoutMs) {
     return __awaiter(this, void 0, void 0, function* () {
-        yield (0, collector_1.startCollector)({ port, frequencyMs: frequencySeconds * 1000 });
+        yield (0, collector_1.startCollector)({
+            port,
+            frequencyMs: frequencySeconds * 1000,
+            metricTimeoutMs
+        });
         // When upload_artifact is enabled, defer export + upload to the post step so
         // callers don't need separate export/upload-artifact steps. Stash everything
         // the post run needs as state.
@@ -136298,8 +136303,9 @@ function runAction() {
         const mode = getMode();
         const port = parsePositiveInteger(core.getInput('server_port') || '7777', 'server_port');
         const frequencySeconds = parseNonNegativeInteger(core.getInput('metric_frequency') || '1', 'metric_frequency');
+        const metricTimeoutMs = parseNonNegativeInteger(core.getInput('metric_timeout_ms') || String(DEFAULT_METRIC_TIMEOUT_MS), 'metric_timeout_ms');
         if (mode === 'start') {
-            yield runStart(port, frequencySeconds);
+            yield runStart(port, frequencySeconds, metricTimeoutMs);
             return;
         }
         yield (0, collector_1.exportCollector)({
@@ -136316,7 +136322,9 @@ function run() {
             if (process.argv.includes(WORKER_ARG)) {
                 yield (0, worker_1.startWorkerServer)({
                     port: parsePositiveInteger(process.env.WORKFLOW_TELEMETRY_SERVER_PORT || '7777', 'WORKFLOW_TELEMETRY_SERVER_PORT'),
-                    frequencyMs: parseNonNegativeInteger(process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000', 'WORKFLOW_TELEMETRY_FREQUENCY_MS')
+                    frequencyMs: parseNonNegativeInteger(process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000', 'WORKFLOW_TELEMETRY_FREQUENCY_MS'),
+                    metricTimeoutMs: parseNonNegativeInteger(process.env.WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS ||
+                        String(DEFAULT_METRIC_TIMEOUT_MS), 'WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS')
                 });
                 return;
             }
@@ -136691,26 +136699,40 @@ function collectRunnerInfo() {
         env
     };
 }
-function collectJsonMetric(metric, collect, errors) {
+function collectJsonMetric(metric, collect, timeoutMs, errors) {
     return __awaiter(this, void 0, void 0, function* () {
+        let timeout;
         try {
-            return toJsonValue(yield collect());
+            const value = timeoutMs > 0
+                ? yield Promise.race([
+                    collect(),
+                    new Promise((_, reject) => {
+                        timeout = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+                    })
+                ])
+                : yield collect();
+            return toJsonValue(value);
         }
         catch (error) {
             errors.push({ time: Date.now(), metric, message: errorMessage(error) });
             return null;
         }
+        finally {
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+        }
     });
 }
-function collectDynamicData(errors) {
+function collectDynamicData(timeoutMs, errors) {
     return __awaiter(this, void 0, void 0, function* () {
         const [currentLoad, mem, networkStats, fsStats, fsSize, disksIO] = yield Promise.all([
-            collectJsonMetric('currentLoad', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.currentLoad(); }), errors),
-            collectJsonMetric('mem', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.mem(); }), errors),
-            collectJsonMetric('networkStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.networkStats(); }), errors),
-            collectJsonMetric('fsStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsStats(); }), errors),
-            collectJsonMetric('fsSize', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsSize(); }), errors),
-            collectJsonMetric('disksIO', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.disksIO(); }), errors)
+            collectJsonMetric('currentLoad', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.currentLoad(); }), timeoutMs, errors),
+            collectJsonMetric('mem', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.mem(); }), timeoutMs, errors),
+            collectJsonMetric('networkStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.networkStats('_'); }), timeoutMs, errors),
+            collectJsonMetric('fsStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsStats(); }), timeoutMs, errors),
+            collectJsonMetric('fsSize', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsSize(); }), timeoutMs, errors),
+            collectJsonMetric('disksIO', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.disksIO(); }), timeoutMs, errors)
         ]);
         return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ time: toJsonValue(systeminformation_1.default.time()), node: process.versions.node, v8: process.versions.v8 }, (currentLoad ? { currentLoad } : {})), (mem ? { mem } : {})), (networkStats ? { networkStats } : {})), (fsStats ? { fsStats } : {})), (fsSize ? { fsSize } : {})), (disksIO ? { disksIO } : {}));
     });
@@ -136814,7 +136836,7 @@ function startWorkerServer(options) {
         let staticDataPromise;
         function collectStaticData() {
             return __awaiter(this, void 0, void 0, function* () {
-                const collected = yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), errors);
+                const collected = yield collectJsonMetric('getStaticData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getStaticData(); }), 0, errors);
                 staticData = collected !== null && collected !== void 0 ? collected : {};
             });
         }
@@ -136959,7 +136981,7 @@ function startWorkerServer(options) {
                 collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
                     samples.push({
                         time,
-                        dynamic: yield collectDynamicData(errors)
+                        dynamic: yield collectDynamicData(options.metricTimeoutMs, errors)
                     });
                 }))();
                 try {

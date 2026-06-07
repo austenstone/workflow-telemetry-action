@@ -10,6 +10,10 @@ inputs:
     description: "Metric collection frequency in seconds. Use 0 to sample continuously, starting the next dynamic metric collection as soon as the previous one completes."
     default: "1"
     required: false
+  metric_timeout_ms:
+    description: "Per-metric collection timeout in milliseconds. Timed-out metrics are omitted from that sample and recorded in errors. Use 0 to disable."
+    default: "2000"
+    required: false
   output_path:
     description: "Path to write telemetry JSON in export mode"
     default: telemetry.json

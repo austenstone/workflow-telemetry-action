@@ -17,6 +17,7 @@ const STATE_CONTEXTS = 'contexts'
 const STATE_ARTIFACT_NAME = 'artifactName'
 const STATE_RETENTION = 'retentionDays'
 const STATE_IF_NO_FILES = 'ifNoFilesFound'
+const DEFAULT_METRIC_TIMEOUT_MS = 2000
 
 function parsePositiveInteger(value: string, inputName: string): number {
   const parsed = Number.parseInt(value, 10)
@@ -60,8 +61,16 @@ function getIfNoFilesFound(): IfNoFilesFound {
   return value
 }
 
-async function runStart(port: number, frequencySeconds: number): Promise<void> {
-  await startCollector({ port, frequencyMs: frequencySeconds * 1000 })
+async function runStart(
+  port: number,
+  frequencySeconds: number,
+  metricTimeoutMs: number
+): Promise<void> {
+  await startCollector({
+    port,
+    frequencyMs: frequencySeconds * 1000,
+    metricTimeoutMs
+  })
 
   // When upload_artifact is enabled, defer export + upload to the post step so
   // callers don't need separate export/upload-artifact steps. Stash everything
@@ -148,9 +157,13 @@ async function runAction(): Promise<void> {
     core.getInput('metric_frequency') || '1',
     'metric_frequency'
   )
+  const metricTimeoutMs = parseNonNegativeInteger(
+    core.getInput('metric_timeout_ms') || String(DEFAULT_METRIC_TIMEOUT_MS),
+    'metric_timeout_ms'
+  )
 
   if (mode === 'start') {
-    await runStart(port, frequencySeconds)
+    await runStart(port, frequencySeconds, metricTimeoutMs)
     return
   }
 
@@ -173,6 +186,11 @@ async function run(): Promise<void> {
         frequencyMs: parseNonNegativeInteger(
           process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000',
           'WORKFLOW_TELEMETRY_FREQUENCY_MS'
+        ),
+        metricTimeoutMs: parseNonNegativeInteger(
+          process.env.WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS ||
+            String(DEFAULT_METRIC_TIMEOUT_MS),
+          'WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS'
         )
       })
       return

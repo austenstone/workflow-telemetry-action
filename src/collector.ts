@@ -111,7 +111,7 @@ function routeWithTime(route: string): string {
 
 export async function startCollector(options: CollectorOptions): Promise<void> {
   logger.info(
-    `Starting telemetry collector on ${HOST}:${options.port} every ${options.frequencyMs}ms`
+    `Starting telemetry collector on ${HOST}:${options.port} every ${options.frequencyMs}ms with metric timeout ${options.metricTimeoutMs}ms`
   )
 
   const child = spawn(process.execPath, [__filename, WORKER_ARG], {
@@ -120,7 +120,8 @@ export async function startCollector(options: CollectorOptions): Promise<void> {
     env: {
       ...process.env,
       WORKFLOW_TELEMETRY_SERVER_PORT: String(options.port),
-      WORKFLOW_TELEMETRY_FREQUENCY_MS: String(options.frequencyMs)
+      WORKFLOW_TELEMETRY_FREQUENCY_MS: String(options.frequencyMs),
+      WORKFLOW_TELEMETRY_METRIC_TIMEOUT_MS: String(options.metricTimeoutMs)
     }
   })
 
