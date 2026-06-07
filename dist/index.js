@@ -136207,6 +136207,13 @@ function parsePositiveInteger(value, inputName) {
     }
     return parsed;
 }
+function parseNonNegativeInteger(value, inputName) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error(`${inputName} must be a non-negative integer`);
+    }
+    return parsed;
+}
 function getMode() {
     const mode = core.getInput('mode') || 'start';
     if (mode !== 'start' && mode !== 'export') {
@@ -136290,7 +136297,7 @@ function runAction() {
         }
         const mode = getMode();
         const port = parsePositiveInteger(core.getInput('server_port') || '7777', 'server_port');
-        const frequencySeconds = parsePositiveInteger(core.getInput('metric_frequency') || '1', 'metric_frequency');
+        const frequencySeconds = parseNonNegativeInteger(core.getInput('metric_frequency') || '1', 'metric_frequency');
         if (mode === 'start') {
             yield runStart(port, frequencySeconds);
             return;
@@ -136309,7 +136316,7 @@ function run() {
             if (process.argv.includes(WORKER_ARG)) {
                 yield (0, worker_1.startWorkerServer)({
                     port: parsePositiveInteger(process.env.WORKFLOW_TELEMETRY_SERVER_PORT || '7777', 'WORKFLOW_TELEMETRY_SERVER_PORT'),
-                    frequencyMs: parsePositiveInteger(process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000', 'WORKFLOW_TELEMETRY_FREQUENCY_MS')
+                    frequencyMs: parseNonNegativeInteger(process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000', 'WORKFLOW_TELEMETRY_FREQUENCY_MS')
                 });
                 return;
             }
@@ -136789,6 +136796,7 @@ function startWorkerServer(options) {
         let collectionStartedAtMs = serverStartedAtMs;
         let collectionFinishedAtMs;
         let samplingTimer;
+        let continuousSampling = false;
         let staticData = {};
         let staticDataPromise;
         function collectStaticData() {
@@ -136808,6 +136816,14 @@ function startWorkerServer(options) {
         function startSampling(startedAtMs) {
             collectionStartedAtMs = startedAtMs;
             collectionFinishedAtMs = undefined;
+            if (options.frequencyMs === 0) {
+                if (continuousSampling) {
+                    return;
+                }
+                continuousSampling = true;
+                void collectContinuously();
+                return;
+            }
             if (samplingTimer) {
                 return;
             }
@@ -136818,6 +136834,7 @@ function startWorkerServer(options) {
         }
         function stopSampling(finishedAtMs) {
             collectionFinishedAtMs = finishedAtMs;
+            continuousSampling = false;
             if (!samplingTimer) {
                 return;
             }
@@ -136910,6 +136927,16 @@ function startWorkerServer(options) {
             }))();
         });
         let collectionInFlight;
+        function collectContinuously() {
+            return __awaiter(this, void 0, void 0, function* () {
+                while (continuousSampling) {
+                    yield collectSample();
+                    // Yield so /stop, /metrics, and /shutdown requests are not starved when
+                    // getDynamicData returns quickly on smaller runners.
+                    yield new Promise(resolve => setImmediate(resolve));
+                }
+            });
+        }
         function collectSample() {
             return __awaiter(this, arguments, void 0, function* (time = Date.now()) {
                 if (collectionInFlight) {

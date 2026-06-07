@@ -219,6 +219,7 @@ export async function startWorkerServer(
   let collectionStartedAtMs = serverStartedAtMs
   let collectionFinishedAtMs: number | undefined
   let samplingTimer: ReturnType<typeof setInterval> | undefined
+  let continuousSampling = false
   let staticData: JsonValue = {}
   let staticDataPromise: Promise<void> | undefined
 
@@ -244,6 +245,16 @@ export async function startWorkerServer(
     collectionStartedAtMs = startedAtMs
     collectionFinishedAtMs = undefined
 
+    if (options.frequencyMs === 0) {
+      if (continuousSampling) {
+        return
+      }
+
+      continuousSampling = true
+      void collectContinuously()
+      return
+    }
+
     if (samplingTimer) {
       return
     }
@@ -257,6 +268,7 @@ export async function startWorkerServer(
 
   function stopSampling(finishedAtMs: number): void {
     collectionFinishedAtMs = finishedAtMs
+    continuousSampling = false
 
     if (!samplingTimer) {
       return
@@ -381,6 +393,15 @@ export async function startWorkerServer(
   })
 
   let collectionInFlight: Promise<void> | undefined
+
+  async function collectContinuously(): Promise<void> {
+    while (continuousSampling) {
+      await collectSample()
+      // Yield so /stop, /metrics, and /shutdown requests are not starved when
+      // getDynamicData returns quickly on smaller runners.
+      await new Promise<void>(resolve => setImmediate(resolve))
+    }
+  }
 
   async function collectSample(time = Date.now()): Promise<void> {
     if (collectionInFlight) {

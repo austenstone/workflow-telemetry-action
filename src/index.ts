@@ -28,6 +28,16 @@ function parsePositiveInteger(value: string, inputName: string): number {
   return parsed
 }
 
+function parseNonNegativeInteger(value: string, inputName: string): number {
+  const parsed = Number.parseInt(value, 10)
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${inputName} must be a non-negative integer`)
+  }
+
+  return parsed
+}
+
 function getMode(): CollectorMode {
   const mode = core.getInput('mode') || 'start'
 
@@ -134,7 +144,7 @@ async function runAction(): Promise<void> {
     core.getInput('server_port') || '7777',
     'server_port'
   )
-  const frequencySeconds = parsePositiveInteger(
+  const frequencySeconds = parseNonNegativeInteger(
     core.getInput('metric_frequency') || '1',
     'metric_frequency'
   )
@@ -160,7 +170,7 @@ async function run(): Promise<void> {
           process.env.WORKFLOW_TELEMETRY_SERVER_PORT || '7777',
           'WORKFLOW_TELEMETRY_SERVER_PORT'
         ),
-        frequencyMs: parsePositiveInteger(
+        frequencyMs: parseNonNegativeInteger(
           process.env.WORKFLOW_TELEMETRY_FREQUENCY_MS || '1000',
           'WORKFLOW_TELEMETRY_FREQUENCY_MS'
         )
