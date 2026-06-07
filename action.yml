@@ -7,7 +7,7 @@ inputs:
     default: start
     required: false
   metric_frequency:
-    description: "Metric collection frequency in seconds. Use 0 to sample continuously, starting the next getDynamicData call as soon as the previous one completes."
+    description: "Metric collection frequency in seconds. Use 0 to sample continuously, starting the next dynamic metric collection as soon as the previous one completes."
     default: "1"
     required: false
   output_path:

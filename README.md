@@ -45,7 +45,7 @@ Leave `upload_artifact` unset to drive it yourself:
 | `mode` | `start` | `start` launches the collector. `export` writes the JSON. |
 | `output_path` | `telemetry.json` | Where to write the telemetry JSON. |
 | `contexts` | `` | JSON of workflow contexts to capture, e.g. `${{ toJson(github) }}`. A JS action can't read these from env. Captured verbatim (may contain secrets). |
-| `metric_frequency` | `1` | Sample frequency in seconds. |
+| `metric_frequency` | `1` | Sample frequency in seconds. Use `0` to sample continuously, starting the next dynamic metric collection as soon as the previous one completes. |
 | `server_port` | `7777` | Local collector HTTP port. |
 | `github_token` | `${{ github.token }}` | Reads job metadata + step traces (needs `actions: read`). |
 | `upload_artifact` | `true` | Export + upload in the `post` step automatically. |
@@ -79,7 +79,20 @@ One artifact, up to three files. Names derive from `output_path`:
   "finished_at": "2026-06-04T12:01:00.000Z",
   "frequency_ms": 1000,
   "samples": [
-    { "time": 1780000000000, "dynamic": { "...": "si.getDynamicData('', '*')" } }
+    {
+      "time": 1780000000000,
+      "dynamic": {
+        "time": { "current": 1780000000000 },
+        "node": "24.15.0",
+        "v8": "13.6.233.17-node.48",
+        "currentLoad": { "currentLoad": 12.3 },
+        "mem": { "active": 7340032000 },
+        "networkStats": [{ "rx_sec": 1048576, "tx_sec": 262144 }],
+        "fsStats": { "rx_sec": 5242880, "wx_sec": 10485760 },
+        "fsSize": [{ "fs": "/", "used": 123456789 }],
+        "disksIO": { "rIO_sec": 10, "wIO_sec": 20 }
+      }
+    }
   ],
   "summary": {
     "sample_count": 10,
@@ -98,4 +111,4 @@ One artifact, up to three files. Names derive from `output_path`:
 }
 ```
 
-The sample window starts after `mode=start` finishes preparing the collector and stops when `mode=export` begins. `static` is collected once outside that window; each sample stores the raw `si.getDynamicData('', '*')`. `summary` is derived. Metric failures land in `errors` instead of failing collection.
+The sample window starts after `mode=start` finishes preparing the collector and stops when `mode=export` begins. `static` is collected once outside that window; each sample stores a focused dynamic metrics payload from `systeminformation` (`currentLoad`, `mem`, `networkStats`, `fsStats`, `fsSize`, and `disksIO`) plus Node/runtime time fields. `summary` is derived. Metric failures land in `errors` instead of failing collection.

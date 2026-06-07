@@ -136702,6 +136702,19 @@ function collectJsonMetric(metric, collect, errors) {
         }
     });
 }
+function collectDynamicData(errors) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const [currentLoad, mem, networkStats, fsStats, fsSize, disksIO] = yield Promise.all([
+            collectJsonMetric('currentLoad', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.currentLoad(); }), errors),
+            collectJsonMetric('mem', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.mem(); }), errors),
+            collectJsonMetric('networkStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.networkStats(); }), errors),
+            collectJsonMetric('fsStats', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsStats(); }), errors),
+            collectJsonMetric('fsSize', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.fsSize(); }), errors),
+            collectJsonMetric('disksIO', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.disksIO(); }), errors)
+        ]);
+        return Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({ time: toJsonValue(systeminformation_1.default.time()), node: process.versions.node, v8: process.versions.v8 }, (currentLoad ? { currentLoad } : {})), (mem ? { mem } : {})), (networkStats ? { networkStats } : {})), (fsStats ? { fsStats } : {})), (fsSize ? { fsSize } : {})), (disksIO ? { disksIO } : {}));
+    });
+}
 function sum(values) {
     return round(values.reduce((total, value) => total + value, 0));
 }
@@ -136932,7 +136945,7 @@ function startWorkerServer(options) {
                 while (continuousSampling) {
                     yield collectSample();
                     // Yield so /stop, /metrics, and /shutdown requests are not starved when
-                    // getDynamicData returns quickly on smaller runners.
+                    // dynamic metric collection returns quickly on smaller runners.
                     yield new Promise(resolve => setImmediate(resolve));
                 }
             });
@@ -136944,10 +136957,9 @@ function startWorkerServer(options) {
                     return;
                 }
                 collectionInFlight = (() => __awaiter(this, void 0, void 0, function* () {
-                    const dynamic = yield collectJsonMetric('getDynamicData', () => __awaiter(this, void 0, void 0, function* () { return yield systeminformation_1.default.getDynamicData('', '*'); }), errors);
                     samples.push({
                         time,
-                        dynamic: dynamic !== null && dynamic !== void 0 ? dynamic : {}
+                        dynamic: yield collectDynamicData(errors)
                     });
                 }))();
                 try {

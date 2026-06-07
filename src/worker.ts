@@ -83,6 +83,40 @@ async function collectJsonMetric(
   }
 }
 
+async function collectDynamicData(
+  errors: TelemetryError[]
+): Promise<JsonValue> {
+  const [currentLoad, mem, networkStats, fsStats, fsSize, disksIO] =
+    await Promise.all([
+      collectJsonMetric(
+        'currentLoad',
+        async () => await si.currentLoad(),
+        errors
+      ),
+      collectJsonMetric('mem', async () => await si.mem(), errors),
+      collectJsonMetric(
+        'networkStats',
+        async () => await si.networkStats(),
+        errors
+      ),
+      collectJsonMetric('fsStats', async () => await si.fsStats(), errors),
+      collectJsonMetric('fsSize', async () => await si.fsSize(), errors),
+      collectJsonMetric('disksIO', async () => await si.disksIO(), errors)
+    ])
+
+  return {
+    time: toJsonValue(si.time()),
+    node: process.versions.node,
+    v8: process.versions.v8,
+    ...(currentLoad ? { currentLoad } : {}),
+    ...(mem ? { mem } : {}),
+    ...(networkStats ? { networkStats } : {}),
+    ...(fsStats ? { fsStats } : {}),
+    ...(fsSize ? { fsSize } : {}),
+    ...(disksIO ? { disksIO } : {})
+  }
+}
+
 function sum(values: readonly number[]): number {
   return round(values.reduce((total, value) => total + value, 0))
 }
@@ -398,7 +432,7 @@ export async function startWorkerServer(
     while (continuousSampling) {
       await collectSample()
       // Yield so /stop, /metrics, and /shutdown requests are not starved when
-      // getDynamicData returns quickly on smaller runners.
+      // dynamic metric collection returns quickly on smaller runners.
       await new Promise<void>(resolve => setImmediate(resolve))
     }
   }
@@ -410,15 +444,9 @@ export async function startWorkerServer(
     }
 
     collectionInFlight = (async () => {
-      const dynamic = await collectJsonMetric(
-        'getDynamicData',
-        async () => await si.getDynamicData('', '*'),
-        errors
-      )
-
       samples.push({
         time,
-        dynamic: dynamic ?? {}
+        dynamic: await collectDynamicData(errors)
       })
     })()
 
