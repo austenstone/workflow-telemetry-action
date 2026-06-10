@@ -67,8 +67,12 @@ export interface TelemetrySummary {
 // (which is verbatim systeminformation output) since these are GitHub-provided
 // facts, not host introspection. `environment` (github-hosted vs self-hosted)
 // is the only billing-relevant signal that can't be inferred any other way.
-// `env` is the full runner environment captured verbatim, including secrets.
-// Captured once at export, so it has no per-sample cost.
+// `env` is a curated allowlist of GitHub/runner-identity environment
+// variables (RUNNER_*, ImageOS/ImageVersion, GitHub run/repo facts). We do
+// NOT dump `process.env` because workflows routinely populate secrets into
+// the environment via `env:` blocks, `INPUT_*`, and setup-action tokens, and
+// the telemetry artifact is downloadable by anyone with read access to the
+// run. Captured once at export, so it has no per-sample cost.
 export interface TelemetryRunner {
   readonly environment: string | null
   readonly os: string | null

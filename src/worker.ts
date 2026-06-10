@@ -50,12 +50,59 @@ function toJsonValue(value: unknown): JsonValue {
 // GitHub sets these for every job. Kept separate from the systeminformation
 // `static` blob since they're GitHub-provided facts, not host introspection.
 // `environment` (github-hosted vs self-hosted) is the only billing-relevant
-// signal that can't be inferred any other way. `env` is the full runner
-// environment, captured verbatim. Captured once at export, no per-sample cost.
+// signal that can't be inferred any other way.
+//
+// `env` is restricted to a curated allowlist of GitHub/runner-identity
+// variables. We intentionally do NOT dump `process.env` because the runner
+// environment routinely contains secrets: workflow `env:` blocks populated
+// from `${{ secrets.* }}`, `INPUT_*` values that may carry secrets passed as
+// action inputs, third-party tool tokens, and any `*_TOKEN` / `*_KEY` /
+// `*_PASSWORD` set by setup actions. The artifact is downloadable by anyone
+// with read access to the run, so leaking secrets here is a real exposure.
+const RUNNER_ENV_ALLOWLIST: readonly string[] = [
+  // Runner host facts (github-actions/runner sets these on every job).
+  'RUNNER_ENVIRONMENT',
+  'RUNNER_OS',
+  'RUNNER_ARCH',
+  'RUNNER_NAME',
+  'RUNNER_TEMP',
+  'RUNNER_TOOL_CACHE',
+  'RUNNER_WORKSPACE',
+  // Hosted-image identity (set by github/runner-images bootstrap).
+  'ImageOS',
+  'ImageVersion',
+  // GitHub-provided run/repo facts. None of these are secret on their own.
+  'CI',
+  'GITHUB_ACTIONS',
+  'GITHUB_ACTOR',
+  'GITHUB_API_URL',
+  'GITHUB_BASE_REF',
+  'GITHUB_EVENT_NAME',
+  'GITHUB_GRAPHQL_URL',
+  'GITHUB_HEAD_REF',
+  'GITHUB_JOB',
+  'GITHUB_REF',
+  'GITHUB_REF_NAME',
+  'GITHUB_REF_TYPE',
+  'GITHUB_REPOSITORY',
+  'GITHUB_REPOSITORY_OWNER',
+  'GITHUB_RUN_ATTEMPT',
+  'GITHUB_RUN_ID',
+  'GITHUB_RUN_NUMBER',
+  'GITHUB_SERVER_URL',
+  'GITHUB_SHA',
+  'GITHUB_TRIGGERING_ACTOR',
+  'GITHUB_WORKFLOW',
+  'GITHUB_WORKFLOW_REF',
+  'GITHUB_WORKFLOW_SHA',
+  'GITHUB_WORKSPACE'
+]
+
 function collectRunnerInfo(): TelemetryRunner {
   const env: Record<string, string> = {}
 
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const key of RUNNER_ENV_ALLOWLIST) {
+    const value = process.env[key]
     if (value !== undefined) {
       env[key] = value
     }
